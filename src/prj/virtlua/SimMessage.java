@@ -20,6 +20,6 @@ public final class SimMessage {
     }
     
     public Object get(int i) {
-        return params[i];
+        return i < params.length ? params[i] : null;
     }
 }

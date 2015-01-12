@@ -3,6 +3,9 @@ package prj.virtlua;
 import java.io.IOException;
 import java.util.concurrent.LinkedBlockingQueue;
 import se.krka.kahlua.luaj.compiler.LuaCompiler;
+import se.krka.kahlua.vm.JavaFunction;
+import se.krka.kahlua.vm.LuaCallFrame;
+import se.krka.kahlua.vm.LuaClosure;
 import se.krka.kahlua.vm.LuaPrototype;
 import se.krka.kahlua.vm.LuaState;
 
@@ -21,6 +24,16 @@ public class SimContext {
     
     public SimContext(String rootCode) throws IOException {
         this(rootCode, new LinkedBlockingQueue<SimMessage>(), new LinkedBlockingQueue<SimMessage>());
+    }
+    
+    public SimContext(SimContext template, LinkedBlockingQueue<SimMessage> toSim, LinkedBlockingQueue<SimMessage> fromSim) {
+        this.bios = template.bios;
+        this.toSim = toSim;
+        this.fromSim = fromSim;
+    }
+    
+    public SimContext(SimContext template) {
+        this(template, new LinkedBlockingQueue<SimMessage>(), new LinkedBlockingQueue<SimMessage>());
     }
     
     public void post(SimMessage message) {
@@ -42,10 +55,11 @@ public class SimContext {
         try {
             if (state == null) {
                 state = new LuaState();
-                state.startCall(bios);
+                register(state);
+                state.startCall(new LuaClosure(bios, state.getEnvironment()));
             }
             if (state.continueCall(ticks)) {
-                state.startCall(bios); // the code returned - go back in on the next round ... after we pause.
+                state.startCall(new LuaClosure(bios, state.getEnvironment())); // the code returned - go back in on the next round ... after we pause.
                 return false;
             } else {
                 return true; // more to do
@@ -62,5 +76,33 @@ public class SimContext {
         fromSim.clear();
         toSim.clear();
         crashed = false;
+    }
+
+    private void register(LuaState state) {
+        state.getEnvironment().rawset("post", new JavaFunction() {
+            @Override
+            public int call(LuaCallFrame callFrame, int nArguments) {
+                Object[] ps = new Object[nArguments];
+                for (int i=0; i<nArguments; i++) {
+                    ps[i] = callFrame.get(i);
+                }
+                fromSim.add(new SimMessage(ps));
+                return 0;
+            }
+        });
+        state.getEnvironment().rawset("poll", new JavaFunction() {
+            @Override
+            public int call(LuaCallFrame callFrame, int nArguments) {
+                SimMessage m = toSim.poll();
+                if (m == null) {
+                    return 0;
+                } else {
+                    for (int i=0; i<m.length(); i++) {
+                        callFrame.push(m.get(i));
+                    }
+                    return m.length();
+                }
+            }
+        });
     }
 }
