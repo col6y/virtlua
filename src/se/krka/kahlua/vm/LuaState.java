@@ -112,7 +112,7 @@ public class LuaState {
         currentThread = new LuaThread(this, new LuaTable());
 
         getEnvironment().rawset("_G", getEnvironment());
-        getEnvironment().rawset("_VERSION", "Lua 5.1");
+        getEnvironment().rawset("_VERSION", "Lua 5.1 on VirtLua (Kahlua-derived)");
 
         BaseLib.register(this);
         StringLib.register(this);
