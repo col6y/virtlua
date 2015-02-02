@@ -36,8 +36,11 @@ public enum TableLib implements JavaFunction {
                     LuaTable table = (LuaTable) callFrame.get(0);
 
                     String separator = "";
-                    if (nArguments >= 2) {
+                    if (nArguments >= 2 && callFrame.get(1) != null) {
                         separator = BaseLib.rawTostring(callFrame.get(1));
+                        if (separator == null) {
+                            BaseLib.fail("bad type of argument 2: expected string or number");
+                        }
                     }
 
                     int first = 1;
@@ -61,7 +64,11 @@ public enum TableLib implements JavaFunction {
                         }
 
                         Object value = table.rawget((double) i);
-                        buffer.append(BaseLib.rawTostring(value));
+                        String valueStr = BaseLib.rawTostring(value);
+                        if (valueStr == null) {
+                            BaseLib.fail("bad value at index " + i + ": expected string or number");
+                        }
+                        buffer.append(valueStr);
                     }
 
                     return callFrame.push(buffer.toString());
