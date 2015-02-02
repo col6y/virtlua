@@ -15,6 +15,8 @@ public class SimContext {
     private LuaState state;
     private final LuaPrototype bios;
     private boolean crashed = false;
+    private String version = "Unknown Platform";
+    private SimMessage systemInfo = new SimMessage("No Info Available");
     
     public SimContext(String bios, LinkedBlockingQueue<SimMessage> toSim, LinkedBlockingQueue<SimMessage> fromSim) throws IOException {
         this.bios = LuaCompiler.compilestring(bios, "<bios>");
@@ -104,5 +106,21 @@ public class SimContext {
                 }
             }
         });
+        state.getEnvironment().rawset("query_info", new JavaFunction() {
+            @Override
+            public int call(LuaCallFrame callFrame, int nArguments) {
+                SimMessage m = systemInfo;
+                callFrame.push(version);
+                for (int i=0; i<m.length(); i++) {
+                    callFrame.push(m.get(i));
+                }
+                return 1 + m.length();
+            }
+        });
+    }
+
+    public void setSystemInfo(String version, Object... rest) {
+        this.version = version;
+        this.systemInfo = new SimMessage(rest);
     }
 }
