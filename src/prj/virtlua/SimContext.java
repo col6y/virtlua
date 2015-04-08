@@ -14,6 +14,7 @@ public class SimContext {
     public final LinkedBlockingQueue<SimMessage> fromSim;
     private LuaState state;
     private final LuaPrototype bios;
+    private LuaClosure main;
     private boolean crashed = false;
     private String version = "Unknown Platform";
     private SimMessage systemInfo = new SimMessage("No Info Available");
@@ -57,11 +58,12 @@ public class SimContext {
         try {
             if (state == null) {
                 state = new LuaState();
+                main = new LuaClosure(bios, state.getEnvironment());
                 register(state);
-                state.startCall(new LuaClosure(bios, state.getEnvironment()));
+                state.startCall(main);
             }
             if (state.continueCall(ticks)) {
-                state.startCall(new LuaClosure(bios, state.getEnvironment())); // the code returned - go back in on the next round ... after we pause.
+                state.startCall(main); // the code returned - go back in on the next round ... after we pause.
                 return false;
             } else {
                 return true; // more to do
@@ -115,6 +117,13 @@ public class SimContext {
                     callFrame.push(m.get(i));
                 }
                 return 1 + m.length();
+            }
+        });
+        state.getEnvironment().rawset("kexec", new JavaFunction() {
+            @Override
+            public int call(LuaCallFrame callFrame, int nArguments) {
+                main = (LuaClosure) callFrame.get(0);
+                return 0;
             }
         });
     }
