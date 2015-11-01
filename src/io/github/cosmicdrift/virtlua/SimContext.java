@@ -1,7 +1,8 @@
-package prj.virtlua;
+package io.github.cosmicdrift.virtlua;
 
 import java.io.IOException;
 import java.util.concurrent.LinkedBlockingQueue;
+
 import se.krka.kahlua.luaj.compiler.LuaCompiler;
 import se.krka.kahlua.vm.JavaFunction;
 import se.krka.kahlua.vm.LuaCallFrame;
@@ -18,39 +19,39 @@ public class SimContext {
     private boolean crashed = false;
     private String version = "Unknown Platform";
     private SimMessage systemInfo = new SimMessage("No Info Available");
-    
+
     public SimContext(String bios, LinkedBlockingQueue<SimMessage> toSim, LinkedBlockingQueue<SimMessage> fromSim) throws IOException {
         this.bios = LuaCompiler.compilestring(bios, "<bios>");
         this.toSim = toSim;
         this.fromSim = fromSim;
     }
-    
+
     public SimContext(String rootCode) throws IOException {
         this(rootCode, new LinkedBlockingQueue<SimMessage>(), new LinkedBlockingQueue<SimMessage>());
     }
-    
+
     public SimContext(SimContext template, LinkedBlockingQueue<SimMessage> toSim, LinkedBlockingQueue<SimMessage> fromSim) {
         this.bios = template.bios;
         this.toSim = toSim;
         this.fromSim = fromSim;
     }
-    
+
     public SimContext(SimContext template) {
         this(template, new LinkedBlockingQueue<SimMessage>(), new LinkedBlockingQueue<SimMessage>());
     }
-    
+
     public void post(SimMessage message) {
         toSim.add(message);
     }
-    
+
     public SimMessage poll() {
         return fromSim.poll();
     }
-    
+
     public boolean isCrashed() {
         return crashed;
     }
-    
+
     public boolean simulate(int ticks) { // returns true if there's currently more to process (should resume sooner rather than later) or false if not (can wait a bit)
         if (crashed) {
             return false;
@@ -74,7 +75,7 @@ public class SimContext {
             return false;
         }
     }
-    
+
     public void hardReset() {
         state = null;
         fromSim.clear();
@@ -87,7 +88,7 @@ public class SimContext {
             @Override
             public int call(LuaCallFrame callFrame, int nArguments) {
                 Object[] ps = new Object[nArguments];
-                for (int i=0; i<nArguments; i++) {
+                for (int i = 0; i < nArguments; i++) {
                     ps[i] = callFrame.get(i);
                 }
                 fromSim.add(new SimMessage(ps));
@@ -101,7 +102,7 @@ public class SimContext {
                 if (m == null) {
                     return 0;
                 } else {
-                    for (int i=0; i<m.length(); i++) {
+                    for (int i = 0; i < m.length(); i++) {
                         callFrame.push(m.get(i));
                     }
                     return m.length();
@@ -113,7 +114,7 @@ public class SimContext {
             public int call(LuaCallFrame callFrame, int nArguments) {
                 SimMessage m = systemInfo;
                 callFrame.push(version);
-                for (int i=0; i<m.length(); i++) {
+                for (int i = 0; i < m.length(); i++) {
                     callFrame.push(m.get(i));
                 }
                 return 1 + m.length();

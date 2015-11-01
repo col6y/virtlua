@@ -1,4 +1,4 @@
-package prj.virtlua;
+package io.github.cosmicdrift.virtlua;
 
 public final class SimMessage {
     private final Object[] params;
