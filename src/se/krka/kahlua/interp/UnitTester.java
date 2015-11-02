@@ -53,5 +53,9 @@ public class UnitTester {
         state.getEnvironment().rawset("tests", tests);
 
         state.call(LuaCompiler.loadis(UnitTester.class.getResourceAsStream("/lua/unit-tester.lua"), "unit-tester", state.getEnvironment()));
+
+        if (!(Boolean) state.getEnvironment().rawget("success")) {
+            System.exit(1);
+        }
     }
 }

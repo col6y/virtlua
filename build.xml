@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="virtlua" default="test">
+
+    <dirname property="basedir" file="${ant.file}"/>
+
+    <property name="build.dir" value="${basedir}/build"/>
+
+    <target name="build">
+        <delete dir="${build.dir}"/>
+        <mkdir dir="${build.dir}"/>
+        <javac destdir="${build.dir}" debug="false" source="8" encoding="UTF-8" includeantruntime="false">
+            <src>
+                <file file="${basedir}/src" />
+            </src>
+        </javac>
+
+        <copy todir="${build.dir}">
+            <fileset dir="${basedir}/resources"/>
+        </copy>
+    </target>
+
+    <target name="test" depends="build">
+        <java classname="se.krka.kahlua.interp.UnitTester" classpath="${build.dir}" failonerror="true" />
+    </target>
+</project>

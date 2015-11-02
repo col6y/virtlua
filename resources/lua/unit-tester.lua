@@ -48,3 +48,5 @@ for name, closure in pairs(tests) do
     totalTestCases = totalTestCases + 1
 end
 print("Passed " .. passedTestCases .. "/" .. totalTestCases .. " test cases.")
+
+success = (passedTestCases == totalTestCases)
