@@ -1,5 +1,7 @@
 # virtlua
 
+[![Build Status](https://travis-ci.org/cosmicdrift/virtlua.svg?branch=master)](https://travis-ci.org/cosmicdrift/virtlua)
+
 This is a library designed to be used by computer games that want to embed semi-realistic computers. It provides an
 implementation of Lua suitable for use in such scenarios. It should be 100% safe against any internal attacks except
 memory-based denial-of-service attacks, though no guarantees are provided.
