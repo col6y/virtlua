@@ -1,4 +1,6 @@
 /*
+ Copyright (c) 2014-2015 Colby Skeggs
+ Derived from code that was
  Copyright (c) 2007-2009 Kristofer Karlsson <kristofer.karlsson@gmail.com>
  and Jan Matejek <ja@matejcik.cz>
 

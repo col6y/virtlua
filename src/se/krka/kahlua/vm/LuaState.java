@@ -1,6 +1,7 @@
 /*
+ Copyright (c) 2014-2015 Colby Skeggs
+ Derived from code that was
  Copyright (c) 2007-2009 Kristofer Karlsson <kristofer.karlsson@gmail.com>
- Heavily modified by Colby Skeggs. Changes are Copyright (c) 2014 Colby Skeggs.
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal

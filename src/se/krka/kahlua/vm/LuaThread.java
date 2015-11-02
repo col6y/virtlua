@@ -1,4 +1,6 @@
 /*
+ Copyright (c) 2014-2015 Colby Skeggs
+ Derived from code that was
  Copyright (c) 2008-2009 Kristofer Karlsson <kristofer.karlsson@gmail.com>
 
  Permission is hereby granted, free of charge, to any person obtaining a copy

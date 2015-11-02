@@ -1,4 +1,6 @@
 /*
+ Copyright (c) 2014-2015 Colby Skeggs
+ Derived from code that was
  Copyright (c) 2007-2008 Kristofer Karlsson <kristofer.karlsson@gmail.com>
  Portions of this code Copyright (c) 2007 Andre Bogus <andre@m3n.de>
 
