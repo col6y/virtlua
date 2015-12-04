@@ -34,64 +34,359 @@ import se.krka.kahlua.vm.LuaPrototype;
 
 class FuncState {
 
-    static class BlockCnt {
-        BlockCnt previous;  /* chain */
-
-        int breaklist;  /* list of jumps out of this loop */
-
-        int nactvar;  /* # active locals outside the breakable structure */
-
-        boolean upval;  /* true if some variable in the block is an upvalue */
-
-        boolean isbreakable;  /* true if `block' is a loop */
-    }
-
+    /**
+     * use return values from previous op
+     */
+    public static final int LUA_MULTRET = -1;
+    /**
+     * masks for new-style vararg
+     */
+    public static final int VARARG_HASARG = 1;
+    public static final int VARARG_ISVARARG = 2;
+    public static final int VARARG_NEEDSARG = 4;
+    /*----------------------------------------------------------------------
+     name		args	description
+     ------------------------------------------------------------------------*/
+    public static final int OP_MOVE = 0;/*	A B	R(A) := R(B)					*/
+    public static final int OP_LOADK = 1;/*	A Bx	R(A) := Kst(Bx)					*/
+    public static final int OP_GETUPVAL = 4; /*	A B	R(A) := UpValue[B]				*/
+//	LTable h;  /* table to find (and reuse) elements in `k' */
+    public static final int OP_SETTABLE = 9; /*	A B C	R(A)[RK(B)] := RK(C)				*/
+    public static final int OP_NEWTABLE = 10; /*	A B C	R(A) := {} (size = B,C)				*/
+    public static final int OP_CALL = 28; /*	A B C	R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1)) */
+    public static final int OP_TAILCALL = 29; /*	A B C	return R(A)(R(A+1), ... ,R(A+B-1))		*/
+    public static final int OP_FORLOOP = 31; /*	A sBx	R(A)+=R(A+2);
+     if R(A) <?= R(A+1) then { pc+=sBx; R(A+3)=R(A) }*/
+    public static final int OP_FORPREP = 32; /*	A sBx	R(A)-=R(A+2); pc+=sBx				*/
+    public static final int OP_TFORLOOP = 33; /*	A C	R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2));
+     if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++	*/
+    public static final int OP_CLOSE = 35; /*	A 	close all variables in the stack up to (>=) R(A)*/
+    public static final int OP_CLOSURE = 36; /*	A Bx	R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))	*/
+    public static final int OP_VARARG = 37; /*	A B	R(A), R(A+1), ..., R(A+B-1) = vararg		*/
+    static final int LUAI_MAXVARS = 200;
     private static final Object NULL_OBJECT = new Object();
+    private static final int MAXSTACK = 250;
+    private static final int LUAI_MAXUPVALUES = 60;
+    /* OpArgMask */
+    private static final int OpArgN = 0; /* argument is not used */
+    private static final int OpArgU = 1; /* argument is used */
+    private static final int OpArgR = 2; /* argument is a register or a jump offset */
+    private static final int OpArgK = 3;   /* argument is a constant or register/constant */
+    /*===========================================================================
+     We assume that instructions are unsigned numbers.
+     All instructions have an opcode in the first 6 bits.
+     Instructions can have the following fields:
+     `A' : 8 bits
+     `B' : 9 bits
+     `C' : 9 bits
+     `Bx' : 18 bits (`B' and `C' together)
+     `sBx' : signed Bx
 
+     A signed argument is represented in excess K; that is, the number
+     value is the unsigned value minus K. K is exactly the maximum value
+     for that argument (so that -max is represented by 0, and +max is
+     represented by 2*max), which is half the maximum for the corresponding
+     unsigned argument.
+     ===========================================================================*/
+    /* basic instruction format */
+    private static final int iABC = 0;
+    private static final int iABx = 1;
+    private static final int iAsBx = 2;
+    /*
+     ** size and position of opcode arguments.
+     */
+    private static final int SIZE_C = 9;
+    private static final int SIZE_B = 9;
+    private static final int SIZE_Bx = (SIZE_C + SIZE_B);
+    private static final int SIZE_A = 8;
+    private static final int SIZE_OP = 6;
+    private static final int POS_OP = 0;
+    private static final int POS_A = (POS_OP + SIZE_OP);
+    private static final int POS_C = (POS_A + SIZE_A);
+    private static final int POS_B = (POS_C + SIZE_C);
+    private static final int POS_Bx = POS_C;
+    private static final int MAX_OP = ((1 << SIZE_OP) - 1);
+    private static final int MAXARG_A = ((1 << SIZE_A) - 1);
+    private static final int MAXARG_B = ((1 << SIZE_B) - 1);
+    private static final int MAXARG_C = ((1 << SIZE_C) - 1);
+    private static final int MAXARG_Bx = ((1 << SIZE_Bx) - 1);
+    private static final int MAXARG_sBx = (MAXARG_Bx >> 1);     	/* `sBx' is signed */
+    private static final int MASK_OP = ((1 << SIZE_OP) - 1) << POS_OP;
+    private static final int MASK_A = ((1 << SIZE_A) - 1) << POS_A;
+    private static final int MASK_B = ((1 << SIZE_B) - 1) << POS_B;
+    private static final int MASK_C = ((1 << SIZE_C) - 1) << POS_C;
+    private static final int MASK_Bx = ((1 << SIZE_Bx) - 1) << POS_Bx;
+    private static final int MASK_NOT_OP = ~MASK_OP;
+    private static final int MASK_NOT_A = ~MASK_A;
+    private static final int MASK_NOT_B = ~MASK_B;
+    private static final int MASK_NOT_C = ~MASK_C;
+    private static final int MASK_NOT_Bx = ~MASK_Bx;
+    /**
+     * this bit 1 means constant (0 means register)
+     */
+    private static final int BITRK = (1 << (SIZE_B - 1));
+    private static final int MAXINDEXRK = (BITRK - 1);
+    /**
+     * * invalid register that fits in 8 bits
+     */
+    private static final int NO_REG = MAXARG_A;
+    private static final int OP_LOADBOOL = 2;/*	A B C	R(A) := (Bool)B; if (C) pc++			*/
+    private static final int OP_LOADNIL = 3; /*	A B	R(A) := ... := R(B) := nil			*/
+    private static final int OP_GETGLOBAL = 5; /*	A Bx	R(A) := Gbl[Kst(Bx)]				*/
+    private static final int OP_GETTABLE = 6; /*	A B C	R(A) := R(B)[RK(C)]				*/
+    private static final int OP_SETGLOBAL = 7; /*	A Bx	Gbl[Kst(Bx)] := R(A)				*/
+    private static final int OP_SETUPVAL = 8; /*	A B	UpValue[B] := R(A)				*/
+    private static final int OP_SELF = 11; /*	A B C	R(A+1) := R(B); R(A) := R(B)[RK(C)]		*/
+    private static final int OP_ADD = 12; /*	A B C	R(A) := RK(B) + RK(C)				*/
+    private static final int OP_SUB = 13; /*	A B C	R(A) := RK(B) - RK(C)				*/
+    private static final int OP_MUL = 14; /*	A B C	R(A) := RK(B) * RK(C)				*/
+    private static final int OP_DIV = 15; /*	A B C	R(A) := RK(B) / RK(C)				*/
+    private static final int OP_MOD = 16; /*	A B C	R(A) := RK(B) % RK(C)				*/
+    private static final int OP_POW = 17; /*	A B C	R(A) := RK(B) ^ RK(C)				*/
+    private static final int OP_UNM = 18; /*	A B	R(A) := -R(B)					*/
+    private static final int OP_NOT = 19; /*	A B	R(A) := not R(B)				*/
+    private static final int OP_LEN = 20; /*	A B	R(A) := length of R(B)				*/
+    private static final int OP_CONCAT = 21; /*	A B C	R(A) := R(B).. ... ..R(C)			*/
+    private static final int OP_JMP = 22; /*	sBx	pc+=sBx					*/
+    private static final int OP_EQ = 23; /*	A B C	if ((RK(B) == RK(C)) ~= A) then pc++		*/
+    private static final int OP_LT = 24; /*	A B C	if ((RK(B) <  RK(C)) ~= A) then pc++  		*/
+    private static final int OP_LE = 25; /*	A B C	if ((RK(B) <= RK(C)) ~= A) then pc++  		*/
+    private static final int OP_TEST = 26; /*	A C	if not (R(A) <=> C) then pc++			*/
+    private static final int OP_TESTSET = 27; /*	A B C	if (R(B) <=> C) then R(A) := R(B) else pc++	*/
+    private static final int OP_RETURN = 30; /*	A B	return R(A), ... ,R(A+B-2)	(see note)	*/
+    private static final int OP_SETLIST = 34; /*	A B C	R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B	*/
+    /*===========================================================================
+     Notes:
+     (*) In OP_CALL, if (B == 0) then B = top. C is the number of returns - 1,
+     and can be 0: OP_CALL then sets `top' to last_result+1, so
+     next open instruction (OP_CALL, OP_RETURN, OP_SETLIST) may use `top'.
+
+     (*) In OP_VARARG, if (B == 0) then use actual number of varargs and
+     set top (like in OP_CALL with C == 0).
+
+     (*) In OP_RETURN, if (B == 0) then return up to `top'
+
+     (*) In OP_SETLIST, if (B == 0) then B = `top';
+     if (C == 0) then next `instruction' is real C
+
+     (*) For comparisons, A specifies what condition the test should accept
+     (true or false).
+
+     (*) All `skips' (pc++) assume that next instruction is a jump
+     ===========================================================================*/
+    /*
+     ** masks for instruction properties. The format is:
+     ** bits 0-1: op mode
+     ** bits 2-3: C arg mode
+     ** bits 4-5: B arg mode
+     ** bit 6: instruction set register A
+     ** bit 7: operator is a test
+     */
+    private static final int[] luaP_opmodes = {
+        /*   T        A           B             C          mode		   opcode	*/
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_MOVE */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_LOADK */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_LOADBOOL */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_LOADNIL */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_GETUPVAL */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_GETGLOBAL */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgK << 2) | (iABC), /* OP_GETTABLE */
+            (0 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_SETGLOBAL */
+            (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_SETUPVAL */
+            (0 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_SETTABLE */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_NEWTABLE */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgK << 2) | (iABC), /* OP_SELF */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_ADD */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_SUB */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_MUL */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_DIV */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_MOD */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_POW */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_UNM */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_NOT */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_LEN */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgR << 2) | (iABC), /* OP_CONCAT */
+            (0 << 7) | (0 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_JMP */
+            (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_EQ */
+            (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_LT */
+            (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_LE */
+            (1 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgU << 2) | (iABC), /* OP_TEST */
+            (1 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgU << 2) | (iABC), /* OP_TESTSET */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_CALL */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_TAILCALL */
+            (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_RETURN */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_FORLOOP */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_FORPREP */
+            (1 << 7) | (0 << 6) | (OpArgN << 4) | (OpArgU << 2) | (iABC), /* OP_TFORLOOP */
+            (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_SETLIST */
+            (0 << 7) | (0 << 6) | (OpArgN << 4) | (OpArgN << 2) | (iABC), /* OP_CLOSE */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABx), /* OP_CLOSURE */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_VARARG */};
+    /* number of list items to accumulate before a SETLIST instruction */
+    private static final int LFIELDS_PER_FLUSH = 50;
+    final int[] upvalues_k = new int[LUAI_MAXUPVALUES];  /* upvalues */
+    final int[] upvalues_info = new int[LUAI_MAXUPVALUES];  /* upvalues */
+    final short[] actvar = new short[LUAI_MAXVARS];  /* declared-variable stack */
     /* information about local variables */
     public String[] locvars;
     /* upvalue names */
     public String[] upvalues;
-
     public int linedefined;
     public int isVararg;
-
     LuaPrototype f;  /* current function header */
-//	LTable h;  /* table to find (and reuse) elements in `k' */
-
     HashMap<Object, Integer> htable;  /* table to find (and reuse) elements in `k' */
-
     FuncState prev;  /* enclosing function */
-
     LexState ls;  /* lexical state */
-
     BlockCnt bl;  /* chain of current blocks */
-
     int pc;  /* next position to code (equivalent to `ncode') */
-
     int lasttarget;   /* `pc' of last `jump target' */
-
     int jpc;  /* list of pending jumps to `pc' */
-
     int freereg;  /* first free register */
-
     int nk;  /* number of elements in `k' */
-
     int np;  /* number of elements in `p' */
-
     int nlocvars;  /* number of elements in `locvars' */
-
     int nactvar;  /* number of active local variables */
 
-    final int[] upvalues_k = new int[LUAI_MAXUPVALUES];  /* upvalues */
-
-    final int[] upvalues_info = new int[LUAI_MAXUPVALUES];  /* upvalues */
-
-
-    final short[] actvar = new short[LUAI_MAXVARS];  /* declared-variable stack */
-
-
     FuncState() {
+    }
+
+    static void _assert(boolean b) {
+        if (!b) {
+            throw new LuaException("compiler assert failed");
+        }
+    }
+
+    static void SET_OPCODE(InstructionPtr i, int o) {
+        i.set((i.get() & (MASK_NOT_OP)) | ((o << POS_OP) & MASK_OP));
+    }
+
+    private static void SETARG_A(InstructionPtr i, int u) {
+        i.set((i.get() & (MASK_NOT_A)) | ((u << POS_A) & MASK_A));
+    }
+
+    static void SETARG_B(InstructionPtr i, int u) {
+        i.set((i.get() & (MASK_NOT_B)) | ((u << POS_B) & MASK_B));
+    }
+
+    static void SETARG_C(InstructionPtr i, int u) {
+        i.set((i.get() & (MASK_NOT_C)) | ((u << POS_C) & MASK_C));
+    }
+
+    private static void SETARG_Bx(InstructionPtr i, int u) {
+        i.set((i.get() & (MASK_NOT_Bx)) | ((u << POS_Bx) & MASK_Bx));
+    }
+
+    private static void SETARG_sBx(InstructionPtr i, int u) {
+        SETARG_Bx(i, u + MAXARG_sBx);
+    }
+
+    private static int CREATE_ABC(int o, int a, int b, int c) {
+        return ((o << POS_OP) & MASK_OP)
+                | ((a << POS_A) & MASK_A)
+                | ((b << POS_B) & MASK_B)
+                | ((c << POS_C) & MASK_C);
+    }
+
+    private static int CREATE_ABx(int o, int a, int bc) {
+        return ((o << POS_OP) & MASK_OP)
+                | ((a << POS_A) & MASK_A)
+                | ((bc << POS_Bx) & MASK_Bx);
+    }
+
+    // vector reallocation
+    static Object[] realloc(Object[] v, int n) {
+        Object[] a = new Object[n];
+        if (v != null) {
+            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
+        }
+        return a;
+    }
+
+    static String[] realloc(String[] v, int n) {
+        String[] a = new String[n];
+        if (v != null) {
+            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
+        }
+        return a;
+    }
+
+    static LuaPrototype[] realloc(LuaPrototype[] v, int n) {
+        LuaPrototype[] a = new LuaPrototype[n];
+        if (v != null) {
+            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
+        }
+        return a;
+    }
+
+    static int[] realloc(int[] v, int n) {
+        int[] a = new int[n];
+        if (v != null) {
+            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
+        }
+        return a;
+    }
+
+    static byte[] realloc(byte[] v, int n) {
+        byte[] a = new byte[n];
+        if (v != null) {
+            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
+        }
+        return a;
+    }
+
+    // from lopcodes.h
+
+    /*
+     ** the following macros help to manipulate instructions
+     */
+    private static int GET_OPCODE(int i) {
+        return (i >> POS_OP) & MAX_OP;
+    }
+
+    public static int GETARG_A(int i) {
+        return (i >> POS_A) & MAXARG_A;
+    }
+
+    private static int GETARG_B(int i) {
+        return (i >> POS_B) & MAXARG_B;
+    }
+
+    private static int GETARG_C(int i) {
+        return (i >> POS_C) & MAXARG_C;
+    }
+
+    private static int GETARG_sBx(int i) {
+        return ((i >> POS_Bx) & MAXARG_Bx) - MAXARG_sBx;
+    }
+
+    /**
+     * test whether value is a constant
+     */
+    private static boolean ISK(int x) {
+        return 0 != ((x) & BITRK);
+    }
+
+    /**
+     * code a constant index as a RK value
+     */
+    private static int RKASK(int x) {
+        return ((x) | BITRK);
+    }
+
+    private static int getOpMode(int m) {
+        return luaP_opmodes[m] & 3;
+    }
+
+    private static int getBMode(int m) {
+        return (luaP_opmodes[m] >> 4) & 3;
+    }
+
+    private static int getCMode(int m) {
+        return (luaP_opmodes[m] >> 2) & 3;
+    }
+
+    private static boolean testTMode(int m) {
+        return 0 != (luaP_opmodes[m] & (1 << 7));
     }
 
     // =============================================================
@@ -328,7 +623,6 @@ class FuncState {
         SETARG_sBx(jmp, offset);
     }
 
-
     /*
      * * returns current `pc' and marks it as a jump target (to avoid wrong *
      * optimizations with consecutive instructions not in the same basic block).
@@ -348,6 +642,11 @@ class FuncState {
         }
     }
 
+
+    /*
+     ** Macros to operate RK indices
+     */
+
     private InstructionPtr getjumpcontrol(int pc) {
         InstructionPtr pi = new InstructionPtr(this.f.code, pc);
         if (pc >= 1 && testTMode(GET_OPCODE(pi.code[pi.idx - 1]))) {
@@ -356,7 +655,6 @@ class FuncState {
             return pi;
         }
     }
-
 
     /*
      * * check whether list has any jump that do not produce a value * (or
@@ -405,6 +703,16 @@ class FuncState {
             list = next;
         }
     }
+
+
+    /*
+     ** R(x) - register
+     ** Kst(x) - constant (in constant table)
+     ** RK(x) == if ISK(x) then Kst(INDEXK(x)) else R(x)
+     */
+    /*
+     ** grep "ORDER OP" if you change these enums
+     */
 
     private void dischargejpc() {
         this.patchlistaux(this.jpc, this.pc, NO_REG, this.pc);
@@ -1154,402 +1462,15 @@ class FuncState {
 
     }
 
-    static void _assert(boolean b) {
-        if (!b) {
-            throw new LuaException("compiler assert failed");
-        }
+    static class BlockCnt {
+        BlockCnt previous;  /* chain */
+
+        int breaklist;  /* list of jumps out of this loop */
+
+        int nactvar;  /* # active locals outside the breakable structure */
+
+        boolean upval;  /* true if some variable in the block is an upvalue */
+
+        boolean isbreakable;  /* true if `block' is a loop */
     }
-
-    private static final int MAXSTACK = 250;
-    private static final int LUAI_MAXUPVALUES = 60;
-    static final int LUAI_MAXVARS = 200;
-
-
-    /* OpArgMask */
-    private static final int OpArgN = 0; /* argument is not used */
-    private static final int OpArgU = 1; /* argument is used */
-    private static final int OpArgR = 2; /* argument is a register or a jump offset */
-    private static final int OpArgK = 3;   /* argument is a constant or register/constant */
-
-
-    static void SET_OPCODE(InstructionPtr i, int o) {
-        i.set((i.get() & (MASK_NOT_OP)) | ((o << POS_OP) & MASK_OP));
-    }
-
-    private static void SETARG_A(InstructionPtr i, int u) {
-        i.set((i.get() & (MASK_NOT_A)) | ((u << POS_A) & MASK_A));
-    }
-
-    static void SETARG_B(InstructionPtr i, int u) {
-        i.set((i.get() & (MASK_NOT_B)) | ((u << POS_B) & MASK_B));
-    }
-
-    static void SETARG_C(InstructionPtr i, int u) {
-        i.set((i.get() & (MASK_NOT_C)) | ((u << POS_C) & MASK_C));
-    }
-
-    private static void SETARG_Bx(InstructionPtr i, int u) {
-        i.set((i.get() & (MASK_NOT_Bx)) | ((u << POS_Bx) & MASK_Bx));
-    }
-
-    private static void SETARG_sBx(InstructionPtr i, int u) {
-        SETARG_Bx(i, u + MAXARG_sBx);
-    }
-
-    private static int CREATE_ABC(int o, int a, int b, int c) {
-        return ((o << POS_OP) & MASK_OP)
-                | ((a << POS_A) & MASK_A)
-                | ((b << POS_B) & MASK_B)
-                | ((c << POS_C) & MASK_C);
-    }
-
-    private static int CREATE_ABx(int o, int a, int bc) {
-        return ((o << POS_OP) & MASK_OP)
-                | ((a << POS_A) & MASK_A)
-                | ((bc << POS_Bx) & MASK_Bx);
-    }
-
-    // vector reallocation
-    static Object[] realloc(Object[] v, int n) {
-        Object[] a = new Object[n];
-        if (v != null) {
-            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
-        }
-        return a;
-    }
-
-    static String[] realloc(String[] v, int n) {
-        String[] a = new String[n];
-        if (v != null) {
-            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
-        }
-        return a;
-    }
-
-    static LuaPrototype[] realloc(LuaPrototype[] v, int n) {
-        LuaPrototype[] a = new LuaPrototype[n];
-        if (v != null) {
-            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
-        }
-        return a;
-    }
-
-    static int[] realloc(int[] v, int n) {
-        int[] a = new int[n];
-        if (v != null) {
-            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
-        }
-        return a;
-    }
-
-    static byte[] realloc(byte[] v, int n) {
-        byte[] a = new byte[n];
-        if (v != null) {
-            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
-        }
-        return a;
-    }
-
-    /**
-     * use return values from previous op
-     */
-    public static final int LUA_MULTRET = -1;
-
-    /**
-     * masks for new-style vararg
-     */
-    public static final int VARARG_HASARG = 1;
-    public static final int VARARG_ISVARARG = 2;
-    public static final int VARARG_NEEDSARG = 4;
-
-    // from lopcodes.h
-
-    /*===========================================================================
-     We assume that instructions are unsigned numbers.
-     All instructions have an opcode in the first 6 bits.
-     Instructions can have the following fields:
-     `A' : 8 bits
-     `B' : 9 bits
-     `C' : 9 bits
-     `Bx' : 18 bits (`B' and `C' together)
-     `sBx' : signed Bx
-
-     A signed argument is represented in excess K; that is, the number
-     value is the unsigned value minus K. K is exactly the maximum value
-     for that argument (so that -max is represented by 0, and +max is
-     represented by 2*max), which is half the maximum for the corresponding
-     unsigned argument.
-     ===========================================================================*/
-    /* basic instruction format */
-    private static final int iABC = 0;
-    private static final int iABx = 1;
-    private static final int iAsBx = 2;
-
-
-    /*
-     ** size and position of opcode arguments.
-     */
-    private static final int SIZE_C = 9;
-    private static final int SIZE_B = 9;
-    private static final int SIZE_Bx = (SIZE_C + SIZE_B);
-    private static final int SIZE_A = 8;
-
-    private static final int SIZE_OP = 6;
-
-    private static final int POS_OP = 0;
-    private static final int POS_A = (POS_OP + SIZE_OP);
-    private static final int POS_C = (POS_A + SIZE_A);
-    private static final int POS_B = (POS_C + SIZE_C);
-    private static final int POS_Bx = POS_C;
-
-    private static final int MAX_OP = ((1 << SIZE_OP) - 1);
-    private static final int MAXARG_A = ((1 << SIZE_A) - 1);
-    private static final int MAXARG_B = ((1 << SIZE_B) - 1);
-    private static final int MAXARG_C = ((1 << SIZE_C) - 1);
-    private static final int MAXARG_Bx = ((1 << SIZE_Bx) - 1);
-    private static final int MAXARG_sBx = (MAXARG_Bx >> 1);     	/* `sBx' is signed */
-
-    private static final int MASK_OP = ((1 << SIZE_OP) - 1) << POS_OP;
-    private static final int MASK_A = ((1 << SIZE_A) - 1) << POS_A;
-    private static final int MASK_B = ((1 << SIZE_B) - 1) << POS_B;
-    private static final int MASK_C = ((1 << SIZE_C) - 1) << POS_C;
-    private static final int MASK_Bx = ((1 << SIZE_Bx) - 1) << POS_Bx;
-
-    private static final int MASK_NOT_OP = ~MASK_OP;
-    private static final int MASK_NOT_A = ~MASK_A;
-    private static final int MASK_NOT_B = ~MASK_B;
-    private static final int MASK_NOT_C = ~MASK_C;
-    private static final int MASK_NOT_Bx = ~MASK_Bx;
-
-    /*
-     ** the following macros help to manipulate instructions
-     */
-    private static int GET_OPCODE(int i) {
-        return (i >> POS_OP) & MAX_OP;
-    }
-
-    public static int GETARG_A(int i) {
-        return (i >> POS_A) & MAXARG_A;
-    }
-
-    private static int GETARG_B(int i) {
-        return (i >> POS_B) & MAXARG_B;
-    }
-
-    private static int GETARG_C(int i) {
-        return (i >> POS_C) & MAXARG_C;
-    }
-
-    private static int GETARG_sBx(int i) {
-        return ((i >> POS_Bx) & MAXARG_Bx) - MAXARG_sBx;
-    }
-
-
-    /*
-     ** Macros to operate RK indices
-     */
-    /**
-     * this bit 1 means constant (0 means register)
-     */
-    private static final int BITRK = (1 << (SIZE_B - 1));
-
-    /**
-     * test whether value is a constant
-     */
-    private static boolean ISK(int x) {
-        return 0 != ((x) & BITRK);
-    }
-
-    private static final int MAXINDEXRK = (BITRK - 1);
-
-    /**
-     * code a constant index as a RK value
-     */
-    private static int RKASK(int x) {
-        return ((x) | BITRK);
-    }
-
-    /**
-     * * invalid register that fits in 8 bits
-     */
-    private static final int NO_REG = MAXARG_A;
-
-
-    /*
-     ** R(x) - register
-     ** Kst(x) - constant (in constant table)
-     ** RK(x) == if ISK(x) then Kst(INDEXK(x)) else R(x)
-     */
-    /*
-     ** grep "ORDER OP" if you change these enums
-     */
-
-    /*----------------------------------------------------------------------
-     name		args	description
-     ------------------------------------------------------------------------*/
-    public static final int OP_MOVE = 0;/*	A B	R(A) := R(B)					*/
-
-    public static final int OP_LOADK = 1;/*	A Bx	R(A) := Kst(Bx)					*/
-
-    private static final int OP_LOADBOOL = 2;/*	A B C	R(A) := (Bool)B; if (C) pc++			*/
-
-    private static final int OP_LOADNIL = 3; /*	A B	R(A) := ... := R(B) := nil			*/
-
-    public static final int OP_GETUPVAL = 4; /*	A B	R(A) := UpValue[B]				*/
-
-    private static final int OP_GETGLOBAL = 5; /*	A Bx	R(A) := Gbl[Kst(Bx)]				*/
-
-    private static final int OP_GETTABLE = 6; /*	A B C	R(A) := R(B)[RK(C)]				*/
-
-    private static final int OP_SETGLOBAL = 7; /*	A Bx	Gbl[Kst(Bx)] := R(A)				*/
-
-    private static final int OP_SETUPVAL = 8; /*	A B	UpValue[B] := R(A)				*/
-
-    public static final int OP_SETTABLE = 9; /*	A B C	R(A)[RK(B)] := RK(C)				*/
-
-    public static final int OP_NEWTABLE = 10; /*	A B C	R(A) := {} (size = B,C)				*/
-
-    private static final int OP_SELF = 11; /*	A B C	R(A+1) := R(B); R(A) := R(B)[RK(C)]		*/
-
-    private static final int OP_ADD = 12; /*	A B C	R(A) := RK(B) + RK(C)				*/
-
-    private static final int OP_SUB = 13; /*	A B C	R(A) := RK(B) - RK(C)				*/
-
-    private static final int OP_MUL = 14; /*	A B C	R(A) := RK(B) * RK(C)				*/
-
-    private static final int OP_DIV = 15; /*	A B C	R(A) := RK(B) / RK(C)				*/
-
-    private static final int OP_MOD = 16; /*	A B C	R(A) := RK(B) % RK(C)				*/
-
-    private static final int OP_POW = 17; /*	A B C	R(A) := RK(B) ^ RK(C)				*/
-
-    private static final int OP_UNM = 18; /*	A B	R(A) := -R(B)					*/
-
-    private static final int OP_NOT = 19; /*	A B	R(A) := not R(B)				*/
-
-    private static final int OP_LEN = 20; /*	A B	R(A) := length of R(B)				*/
-
-    private static final int OP_CONCAT = 21; /*	A B C	R(A) := R(B).. ... ..R(C)			*/
-
-    private static final int OP_JMP = 22; /*	sBx	pc+=sBx					*/
-
-    private static final int OP_EQ = 23; /*	A B C	if ((RK(B) == RK(C)) ~= A) then pc++		*/
-
-    private static final int OP_LT = 24; /*	A B C	if ((RK(B) <  RK(C)) ~= A) then pc++  		*/
-
-    private static final int OP_LE = 25; /*	A B C	if ((RK(B) <= RK(C)) ~= A) then pc++  		*/
-
-    private static final int OP_TEST = 26; /*	A C	if not (R(A) <=> C) then pc++			*/
-
-    private static final int OP_TESTSET = 27; /*	A B C	if (R(B) <=> C) then R(A) := R(B) else pc++	*/
-
-    public static final int OP_CALL = 28; /*	A B C	R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1)) */
-
-    public static final int OP_TAILCALL = 29; /*	A B C	return R(A)(R(A+1), ... ,R(A+B-1))		*/
-
-    private static final int OP_RETURN = 30; /*	A B	return R(A), ... ,R(A+B-2)	(see note)	*/
-
-    public static final int OP_FORLOOP = 31; /*	A sBx	R(A)+=R(A+2);
-     if R(A) <?= R(A+1) then { pc+=sBx; R(A+3)=R(A) }*/
-
-    public static final int OP_FORPREP = 32; /*	A sBx	R(A)-=R(A+2); pc+=sBx				*/
-
-    public static final int OP_TFORLOOP = 33; /*	A C	R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2)); 
-     if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++	*/
-
-    private static final int OP_SETLIST = 34; /*	A B C	R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B	*/
-
-    public static final int OP_CLOSE = 35; /*	A 	close all variables in the stack up to (>=) R(A)*/
-
-    public static final int OP_CLOSURE = 36; /*	A Bx	R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))	*/
-
-    public static final int OP_VARARG = 37; /*	A B	R(A), R(A+1), ..., R(A+B-1) = vararg		*/
-
-
-    /*===========================================================================
-     Notes:
-     (*) In OP_CALL, if (B == 0) then B = top. C is the number of returns - 1,
-     and can be 0: OP_CALL then sets `top' to last_result+1, so
-     next open instruction (OP_CALL, OP_RETURN, OP_SETLIST) may use `top'.
-
-     (*) In OP_VARARG, if (B == 0) then use actual number of varargs and
-     set top (like in OP_CALL with C == 0).
-
-     (*) In OP_RETURN, if (B == 0) then return up to `top'
-
-     (*) In OP_SETLIST, if (B == 0) then B = `top';
-     if (C == 0) then next `instruction' is real C
-
-     (*) For comparisons, A specifies what condition the test should accept
-     (true or false).
-
-     (*) All `skips' (pc++) assume that next instruction is a jump
-     ===========================================================================*/
-    /*
-     ** masks for instruction properties. The format is:
-     ** bits 0-1: op mode
-     ** bits 2-3: C arg mode
-     ** bits 4-5: B arg mode
-     ** bit 6: instruction set register A
-     ** bit 7: operator is a test
-     */
-    private static final int[] luaP_opmodes = {
-        /*   T        A           B             C          mode		   opcode	*/
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_MOVE */
-            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_LOADK */
-            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_LOADBOOL */
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_LOADNIL */
-            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_GETUPVAL */
-            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_GETGLOBAL */
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgK << 2) | (iABC), /* OP_GETTABLE */
-            (0 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_SETGLOBAL */
-            (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_SETUPVAL */
-            (0 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_SETTABLE */
-            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_NEWTABLE */
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgK << 2) | (iABC), /* OP_SELF */
-            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_ADD */
-            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_SUB */
-            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_MUL */
-            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_DIV */
-            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_MOD */
-            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_POW */
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_UNM */
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_NOT */
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_LEN */
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgR << 2) | (iABC), /* OP_CONCAT */
-            (0 << 7) | (0 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_JMP */
-            (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_EQ */
-            (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_LT */
-            (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_LE */
-            (1 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgU << 2) | (iABC), /* OP_TEST */
-            (1 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgU << 2) | (iABC), /* OP_TESTSET */
-            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_CALL */
-            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_TAILCALL */
-            (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_RETURN */
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_FORLOOP */
-            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_FORPREP */
-            (1 << 7) | (0 << 6) | (OpArgN << 4) | (OpArgU << 2) | (iABC), /* OP_TFORLOOP */
-            (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_SETLIST */
-            (0 << 7) | (0 << 6) | (OpArgN << 4) | (OpArgN << 2) | (iABC), /* OP_CLOSE */
-            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABx), /* OP_CLOSURE */
-            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_VARARG */};
-
-    private static int getOpMode(int m) {
-        return luaP_opmodes[m] & 3;
-    }
-
-    private static int getBMode(int m) {
-        return (luaP_opmodes[m] >> 4) & 3;
-    }
-
-    private static int getCMode(int m) {
-        return (luaP_opmodes[m] >> 2) & 3;
-    }
-
-    private static boolean testTMode(int m) {
-        return 0 != (luaP_opmodes[m] & (1 << 7));
-    }
-
-    /* number of list items to accumulate before a SETLIST instruction */
-    private static final int LFIELDS_PER_FLUSH = 50;
 }
