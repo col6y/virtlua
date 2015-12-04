@@ -149,7 +149,7 @@ public enum StringLib implements JavaFunction {
                                 // Detect width
                                 int width = 0;
                                 while (c >= '0' && c <= '9') {
-                                    width = 10 * width + (int) (c - '0');
+                                    width = 10 * width + c - '0';
                                     i++;
                                     BaseLib.luaAssert(i < len, "incomplete option to 'format'");
                                     c = f.charAt(i);
@@ -165,7 +165,7 @@ public enum StringLib implements JavaFunction {
                                     c = f.charAt(i);
 
                                     while (c >= '0' && c <= '9') {
-                                        precision = 10 * precision + (int) (c - '0');
+                                        precision = 10 * precision + c - '0';
                                         i++;
                                         BaseLib.luaAssert(i < len, "incomplete option to 'format'");
                                         c = f.charAt(i);

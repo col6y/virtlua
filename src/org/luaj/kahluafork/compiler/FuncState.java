@@ -23,6 +23,7 @@
  */
 package org.luaj.kahluafork.compiler;
 
+import java.util.HashMap;
 import java.util.Hashtable;
 
 import org.luaj.kahluafork.compiler.LexState.ConsControl;
@@ -31,10 +32,9 @@ import org.luaj.kahluafork.compiler.LexState.expdesc;
 import se.krka.kahlua.vm.LuaException;
 import se.krka.kahlua.vm.LuaPrototype;
 
-public class FuncState {
+class FuncState {
 
     static class BlockCnt {
-
         BlockCnt previous;  /* chain */
 
         int breaklist;  /* list of jumps out of this loop */
@@ -44,7 +44,6 @@ public class FuncState {
         boolean upval;  /* true if some variable in the block is an upvalue */
 
         boolean isbreakable;  /* true if `block' is a loop */
-
     }
 
     private static final Object NULL_OBJECT = new Object();
@@ -55,13 +54,12 @@ public class FuncState {
     public String[] upvalues;
 
     public int linedefined;
-    public int lastlinedefined;
     public int isVararg;
 
     LuaPrototype f;  /* current function header */
 //	LTable h;  /* table to find (and reuse) elements in `k' */
 
-    Hashtable htable;  /* table to find (and reuse) elements in `k' */
+    HashMap<Object, Integer> htable;  /* table to find (and reuse) elements in `k' */
 
     FuncState prev;  /* enclosing function */
 
@@ -85,12 +83,12 @@ public class FuncState {
 
     int nactvar;  /* number of active local variables */
 
-    int[] upvalues_k = new int[LUAI_MAXUPVALUES];  /* upvalues */
+    final int[] upvalues_k = new int[LUAI_MAXUPVALUES];  /* upvalues */
 
-    int[] upvalues_info = new int[LUAI_MAXUPVALUES];  /* upvalues */
+    final int[] upvalues_info = new int[LUAI_MAXUPVALUES];  /* upvalues */
 
 
-    short actvar[] = new short[LUAI_MAXVARS];  /* declared-variable stack */
+    final short[] actvar = new short[LUAI_MAXVARS];  /* declared-variable stack */
 
 
     FuncState() {
@@ -118,7 +116,7 @@ public class FuncState {
     // =============================================================
     // from lparser.c
     // =============================================================
-    String getlocvar(int i) {
+    private String getlocvar(int i) {
         return locvars[actvar[i]];
     }
 
@@ -128,14 +126,14 @@ public class FuncState {
         }
     }
 
-    void errorlimit(int limit, String what) {
+    private void errorlimit(int limit, String what) {
         String msg = (linedefined == 0)
                 ? "main function has more than " + limit + " " + what
                 : "function at line " + linedefined + " has more than " + limit + " " + what;
         ls.lexerror(msg, 0);
     }
 
-    int indexupvalue(String name, expdesc v) {
+    private int indexupvalue(String name, expdesc v) {
         int i;
         for (i = 0; i < f.numUpvalues; i++) {
             if (upvalues_k[i] == v.k && upvalues_info[i] == v.info) {
@@ -158,7 +156,7 @@ public class FuncState {
         return numUpvalues;
     }
 
-    int searchvar(String n) {
+    private int searchvar(String n) {
         int i;
         for (i = nactvar - 1; i >= 0; i--) {
             if (n == getlocvar(i)) {
@@ -166,10 +164,9 @@ public class FuncState {
             }
         }
         return -1; /* not found */
-
     }
 
-    void markupval(int level) {
+    private void markupval(int level) {
         BlockCnt bl = this.bl;
         while (bl != null && bl.nactvar > level) {
             bl = bl.previous;
@@ -186,7 +183,6 @@ public class FuncState {
             var.init(LexState.VLOCAL, v);
             if (base == 0) {
                 markupval(v); /* local will be used as an upval */
-
             }
             return LexState.VLOCAL;
         } else { /* not found at current level; try upper one */
@@ -218,19 +214,6 @@ public class FuncState {
         _assert(this.freereg == this.nactvar);
     }
 
-    //
-//	void leaveblock (FuncState *fs) {
-//	  BlockCnt *bl = this.bl;
-//	  this.bl = bl.previous;
-//	  removevars(this.ls, bl.nactvar);
-//	  if (bl.upval)
-//	    this.codeABC(OP_CLOSE, bl.nactvar, 0, 0);
-//	  /* a block either controls scope or breaks (never both) */
-//	  assert(!bl.isbreakable || !bl.upval);
-//	  assert(bl.nactvar == this.nactvar);
-//	  this.freereg = this.nactvar;  /* free registers */
-//	  this.patchtohere(bl.breaklist);
-//	}
     void leaveblock() {
         BlockCnt bl = this.bl;
         this.bl = bl.previous;
@@ -261,7 +244,7 @@ public class FuncState {
         }
     }
 
-    boolean hasmultret(int k) {
+    private boolean hasmultret(int k) {
         return ((k) == LexState.VCALL || (k) == LexState.VVARARG);
     }
 
@@ -330,12 +313,12 @@ public class FuncState {
         this.codeABC(OP_RETURN, first, nret + 1, 0);
     }
 
-    int condjump(int /* OpCode */ op, int A, int B, int C) {
+    private int condjump(int /* OpCode */ op, int A, int B, int C) {
         this.codeABC(op, A, B, C);
         return this.jump();
     }
 
-    void fixjump(int pc, int dest) {
+    private void fixjump(int pc, int dest) {
         InstructionPtr jmp = new InstructionPtr(this.f.code, pc);
         int offset = dest - (pc + 1);
         _assert(dest != LexState.NO_JUMP);
@@ -355,7 +338,7 @@ public class FuncState {
         return this.pc;
     }
 
-    int getjump(int pc) {
+    private int getjump(int pc) {
         int offset = GETARG_sBx(this.f.code[pc]);
         /* point to itself represents end of list */
         if (offset == LexState.NO_JUMP) /* end of list */ {
@@ -365,7 +348,7 @@ public class FuncState {
         }
     }
 
-    InstructionPtr getjumpcontrol(int pc) {
+    private InstructionPtr getjumpcontrol(int pc) {
         InstructionPtr pi = new InstructionPtr(this.f.code, pc);
         if (pc >= 1 && testTMode(GET_OPCODE(pi.code[pi.idx - 1]))) {
             return new InstructionPtr(pi.code, pi.idx - 1);
@@ -379,7 +362,7 @@ public class FuncState {
      * * check whether list has any jump that do not produce a value * (or
      * produce an inverted value)
      */
-    boolean need_value(int list) {
+    private boolean need_value(int list) {
         for (; list != LexState.NO_JUMP; list = this.getjump(list)) {
             int i = this.getjumpcontrol(list).get();
             if (GET_OPCODE(i) != OP_TESTSET) {
@@ -390,7 +373,7 @@ public class FuncState {
 
     }
 
-    boolean patchtestreg(int node, int reg) {
+    private boolean patchtestreg(int node, int reg) {
         InstructionPtr i = this.getjumpcontrol(node);
         if (GET_OPCODE(i.get()) != OP_TESTSET) /* cannot patch other instructions */ {
             return false;
@@ -404,13 +387,13 @@ public class FuncState {
         return true;
     }
 
-    void removevalues(int list) {
+    private void removevalues(int list) {
         for (; list != LexState.NO_JUMP; list = this.getjump(list)) {
             this.patchtestreg(list, NO_REG);
         }
     }
 
-    void patchlistaux(int list, int vtarget, int reg, int dtarget) {
+    private void patchlistaux(int list, int vtarget, int reg, int dtarget) {
         while (list != LexState.NO_JUMP) {
             int next = this.getjump(list);
             if (this.patchtestreg(list, reg)) {
@@ -423,7 +406,7 @@ public class FuncState {
         }
     }
 
-    void dischargejpc() {
+    private void dischargejpc() {
         this.patchlistaux(this.jpc, this.pc, NO_REG, this.pc);
         this.jpc = LexState.NO_JUMP;
     }
@@ -474,26 +457,26 @@ public class FuncState {
         this.freereg += n;
     }
 
-    void freereg(int reg) {
+    private void freereg(int reg) {
         if (!ISK(reg) && reg >= this.nactvar) {
             this.freereg--;
             _assert(reg == this.freereg);
         }
     }
 
-    void freeexp(expdesc e) {
+    private void freeexp(expdesc e) {
         if (e.k == LexState.VNONRELOC) {
             this.freereg(e.info);
         }
     }
 
-    int addk(Object v) {
+    private int addk(Object v) {
         int idx;
         if (this.htable.containsKey(v)) {
-            idx = ((Integer) htable.get(v)).intValue();
+            idx = htable.get(v);
         } else {
             idx = this.nk;
-            this.htable.put(v, new Integer(idx));
+            this.htable.put(v, idx);
             final LuaPrototype f = this.f;
             if (f.constants == null || nk + 1 >= f.constants.length) {
                 f.constants = realloc(f.constants, nk * 2 + 1);
@@ -511,14 +494,14 @@ public class FuncState {
     }
 
     int numberK(double r) {
-        return this.addk(new Double(r));
+        return this.addk(r);
     }
 
-    int boolK(boolean b) {
+    private int boolK(boolean b) {
         return this.addk((b ? Boolean.TRUE : Boolean.FALSE));
     }
 
-    int nilK() {
+    private int nilK() {
         return this.addk(NULL_OBJECT);
     }
 
@@ -580,13 +563,13 @@ public class FuncState {
         }
     }
 
-    int code_label(int A, int b, int jump) {
+    private int code_label(int A, int b, int jump) {
         this.getlabel(); /* those instructions may be jump targets */
 
         return this.codeABC(OP_LOADBOOL, A, b, jump);
     }
 
-    void discharge2reg(expdesc e, int reg) {
+    private void discharge2reg(expdesc e, int reg) {
         this.dischargevars(e);
         switch (e.k) {
             case LexState.VNIL: {
@@ -628,14 +611,14 @@ public class FuncState {
         e.k = LexState.VNONRELOC;
     }
 
-    void discharge2anyreg(expdesc e) {
+    private void discharge2anyreg(expdesc e) {
         if (e.k != LexState.VNONRELOC) {
             this.reserveregs(1);
             this.discharge2reg(e, this.freereg - 1);
         }
     }
 
-    void exp2reg(expdesc e, int reg) {
+    private void exp2reg(expdesc e, int reg) {
         this.discharge2reg(e, reg);
         if (e.k == LexState.VJMP) {
             e.t = this.concat(e.t, e.info); /* put this jump in `t' list */
@@ -709,7 +692,7 @@ public class FuncState {
 
                     e.info = (e.k == LexState.VNIL) ? this.nilK()
                             : (e.k == LexState.VKNUM) ? this.numberK(e.nval())
-                                    : this.boolK((e.k == LexState.VTRUE));
+                            : this.boolK((e.k == LexState.VTRUE));
                     e.k = LexState.VK;
                     return RKASK(e.info);
                 } else {
@@ -773,7 +756,7 @@ public class FuncState {
         e.k = LexState.VNONRELOC;
     }
 
-    void invertjump(expdesc e) {
+    private void invertjump(expdesc e) {
         InstructionPtr pc = this.getjumpcontrol(e.info);
         _assert(testTMode(GET_OPCODE(pc.get()))
                 && GET_OPCODE(pc.get()) != OP_TESTSET && GET_OPCODE(pc.get()) != OP_TEST);
@@ -783,7 +766,7 @@ public class FuncState {
         SETARG_A(pc, nota);
     }
 
-    int jumponcond(expdesc e, int cond) {
+    private int jumponcond(expdesc e, int cond) {
         if (e.k == LexState.VRELOCABLE) {
             int ie = this.getcode(e);
             if (GET_OPCODE(ie) == OP_NOT) {
@@ -831,7 +814,7 @@ public class FuncState {
         e.t = LexState.NO_JUMP;
     }
 
-    void goiffalse(expdesc e) {
+    private void goiffalse(expdesc e) {
         int pc; /* pc of last jump */
 
         this.dischargevars(e);
@@ -862,7 +845,7 @@ public class FuncState {
         e.f = LexState.NO_JUMP;
     }
 
-    void codenot(expdesc e) {
+    private void codenot(expdesc e) {
         this.dischargevars(e);
         switch (e.k) {
             case LexState.VNIL:
@@ -909,7 +892,7 @@ public class FuncState {
         t.k = LexState.VINDEXED;
     }
 
-    boolean constfolding(int op, expdesc e1, expdesc e2) {
+    private boolean constfolding(int op, expdesc e1, expdesc e2) {
         if (!e1.isnumeral() || !e2.isnumeral()) {
             return false;
         }
@@ -952,12 +935,9 @@ public class FuncState {
         return true;
     }
 
-    void codearith(int op, expdesc e1, expdesc e2) {
-        if (constfolding(op, e1, e2)) {
-            return;
-        } else {
-            int o2 = (op != OP_UNM && op != OP_LEN) ? this.exp2RK(e2)
-                    : 0;
+    private void codearith(int op, expdesc e1, expdesc e2) {
+        if (!constfolding(op, e1, e2)) {
+            int o2 = (op != OP_UNM && op != OP_LEN) ? this.exp2RK(e2) : 0;
             int o1 = this.exp2RK(e1);
             if (o1 > o2) {
                 this.freeexp(e1);
@@ -971,7 +951,7 @@ public class FuncState {
         }
     }
 
-    void codecomp(int /* OpCode */ op, int cond, expdesc e1, expdesc e2) {
+    private void codecomp(int /* OpCode */ op, int cond, expdesc e1, expdesc e2) {
         int o1 = this.exp2RK(e1);
         int o2 = this.exp2RK(e2);
         this.freeexp(e2);
@@ -1129,7 +1109,7 @@ public class FuncState {
         this.f.lines[this.pc - 1] = line;
     }
 
-    int code(int instruction, int line) {
+    private int code(int instruction, int line) {
         LuaPrototype f = this.f;
         this.dischargejpc(); /* `pc' will change */
         /* put new instruction in code array */
@@ -1160,7 +1140,7 @@ public class FuncState {
         return this.code(CREATE_ABx(o, a, bc), this.ls.lastline);
     }
 
-    void setlist(int base, int nelems, int tostore) {
+    private void setlist(int base, int nelems, int tostore) {
         int c = (nelems - 1) / LFIELDS_PER_FLUSH + 1;
         int b = (tostore == LUA_MULTRET) ? 0 : tostore;
         _assert(tostore != 0);
@@ -1174,29 +1154,29 @@ public class FuncState {
 
     }
 
-    protected static void _assert(boolean b) {
+    static void _assert(boolean b) {
         if (!b) {
             throw new LuaException("compiler assert failed");
         }
     }
 
-    public static final int MAXSTACK = 250;
-    static final int LUAI_MAXUPVALUES = 60;
+    private static final int MAXSTACK = 250;
+    private static final int LUAI_MAXUPVALUES = 60;
     static final int LUAI_MAXVARS = 200;
 
 
     /* OpArgMask */
-    static final int OpArgN = 0, /* argument is not used */
-            OpArgU = 1, /* argument is used */
-            OpArgR = 2, /* argument is a register or a jump offset */
-            OpArgK = 3;   /* argument is a constant or register/constant */
+    private static final int OpArgN = 0; /* argument is not used */
+    private static final int OpArgU = 1; /* argument is used */
+    private static final int OpArgR = 2; /* argument is a register or a jump offset */
+    private static final int OpArgK = 3;   /* argument is a constant or register/constant */
 
 
     static void SET_OPCODE(InstructionPtr i, int o) {
         i.set((i.get() & (MASK_NOT_OP)) | ((o << POS_OP) & MASK_OP));
     }
 
-    static void SETARG_A(InstructionPtr i, int u) {
+    private static void SETARG_A(InstructionPtr i, int u) {
         i.set((i.get() & (MASK_NOT_A)) | ((u << POS_A) & MASK_A));
     }
 
@@ -1208,22 +1188,22 @@ public class FuncState {
         i.set((i.get() & (MASK_NOT_C)) | ((u << POS_C) & MASK_C));
     }
 
-    static void SETARG_Bx(InstructionPtr i, int u) {
+    private static void SETARG_Bx(InstructionPtr i, int u) {
         i.set((i.get() & (MASK_NOT_Bx)) | ((u << POS_Bx) & MASK_Bx));
     }
 
-    static void SETARG_sBx(InstructionPtr i, int u) {
+    private static void SETARG_sBx(InstructionPtr i, int u) {
         SETARG_Bx(i, u + MAXARG_sBx);
     }
 
-    static int CREATE_ABC(int o, int a, int b, int c) {
+    private static int CREATE_ABC(int o, int a, int b, int c) {
         return ((o << POS_OP) & MASK_OP)
                 | ((a << POS_A) & MASK_A)
                 | ((b << POS_B) & MASK_B)
                 | ((c << POS_C) & MASK_C);
     }
 
-    static int CREATE_ABx(int o, int a, int bc) {
+    private static int CREATE_ABx(int o, int a, int bc) {
         return ((o << POS_OP) & MASK_OP)
                 | ((a << POS_A) & MASK_A)
                 | ((bc << POS_Bx) & MASK_Bx);
@@ -1301,50 +1281,50 @@ public class FuncState {
      unsigned argument.
      ===========================================================================*/
     /* basic instruction format */
-    public static final int iABC = 0;
-    public static final int iABx = 1;
-    public static final int iAsBx = 2;
+    private static final int iABC = 0;
+    private static final int iABx = 1;
+    private static final int iAsBx = 2;
 
 
     /*
      ** size and position of opcode arguments.
      */
-    public static final int SIZE_C = 9;
-    public static final int SIZE_B = 9;
-    public static final int SIZE_Bx = (SIZE_C + SIZE_B);
-    public static final int SIZE_A = 8;
+    private static final int SIZE_C = 9;
+    private static final int SIZE_B = 9;
+    private static final int SIZE_Bx = (SIZE_C + SIZE_B);
+    private static final int SIZE_A = 8;
 
-    public static final int SIZE_OP = 6;
+    private static final int SIZE_OP = 6;
 
-    public static final int POS_OP = 0;
-    public static final int POS_A = (POS_OP + SIZE_OP);
-    public static final int POS_C = (POS_A + SIZE_A);
-    public static final int POS_B = (POS_C + SIZE_C);
-    public static final int POS_Bx = POS_C;
+    private static final int POS_OP = 0;
+    private static final int POS_A = (POS_OP + SIZE_OP);
+    private static final int POS_C = (POS_A + SIZE_A);
+    private static final int POS_B = (POS_C + SIZE_C);
+    private static final int POS_Bx = POS_C;
 
-    public static final int MAX_OP = ((1 << SIZE_OP) - 1);
-    public static final int MAXARG_A = ((1 << SIZE_A) - 1);
-    public static final int MAXARG_B = ((1 << SIZE_B) - 1);
-    public static final int MAXARG_C = ((1 << SIZE_C) - 1);
-    public static final int MAXARG_Bx = ((1 << SIZE_Bx) - 1);
-    public static final int MAXARG_sBx = (MAXARG_Bx >> 1);     	/* `sBx' is signed */
+    private static final int MAX_OP = ((1 << SIZE_OP) - 1);
+    private static final int MAXARG_A = ((1 << SIZE_A) - 1);
+    private static final int MAXARG_B = ((1 << SIZE_B) - 1);
+    private static final int MAXARG_C = ((1 << SIZE_C) - 1);
+    private static final int MAXARG_Bx = ((1 << SIZE_Bx) - 1);
+    private static final int MAXARG_sBx = (MAXARG_Bx >> 1);     	/* `sBx' is signed */
 
-    public static final int MASK_OP = ((1 << SIZE_OP) - 1) << POS_OP;
-    public static final int MASK_A = ((1 << SIZE_A) - 1) << POS_A;
-    public static final int MASK_B = ((1 << SIZE_B) - 1) << POS_B;
-    public static final int MASK_C = ((1 << SIZE_C) - 1) << POS_C;
-    public static final int MASK_Bx = ((1 << SIZE_Bx) - 1) << POS_Bx;
+    private static final int MASK_OP = ((1 << SIZE_OP) - 1) << POS_OP;
+    private static final int MASK_A = ((1 << SIZE_A) - 1) << POS_A;
+    private static final int MASK_B = ((1 << SIZE_B) - 1) << POS_B;
+    private static final int MASK_C = ((1 << SIZE_C) - 1) << POS_C;
+    private static final int MASK_Bx = ((1 << SIZE_Bx) - 1) << POS_Bx;
 
-    public static final int MASK_NOT_OP = ~MASK_OP;
-    public static final int MASK_NOT_A = ~MASK_A;
-    public static final int MASK_NOT_B = ~MASK_B;
-    public static final int MASK_NOT_C = ~MASK_C;
-    public static final int MASK_NOT_Bx = ~MASK_Bx;
+    private static final int MASK_NOT_OP = ~MASK_OP;
+    private static final int MASK_NOT_A = ~MASK_A;
+    private static final int MASK_NOT_B = ~MASK_B;
+    private static final int MASK_NOT_C = ~MASK_C;
+    private static final int MASK_NOT_Bx = ~MASK_Bx;
 
     /*
      ** the following macros help to manipulate instructions
      */
-    public static int GET_OPCODE(int i) {
+    private static int GET_OPCODE(int i) {
         return (i >> POS_OP) & MAX_OP;
     }
 
@@ -1352,19 +1332,15 @@ public class FuncState {
         return (i >> POS_A) & MAXARG_A;
     }
 
-    public static int GETARG_B(int i) {
+    private static int GETARG_B(int i) {
         return (i >> POS_B) & MAXARG_B;
     }
 
-    public static int GETARG_C(int i) {
+    private static int GETARG_C(int i) {
         return (i >> POS_C) & MAXARG_C;
     }
 
-    public static int GETARG_Bx(int i) {
-        return (i >> POS_Bx) & MAXARG_Bx;
-    }
-
-    public static int GETARG_sBx(int i) {
+    private static int GETARG_sBx(int i) {
         return ((i >> POS_Bx) & MAXARG_Bx) - MAXARG_sBx;
     }
 
@@ -1375,35 +1351,28 @@ public class FuncState {
     /**
      * this bit 1 means constant (0 means register)
      */
-    public static final int BITRK = (1 << (SIZE_B - 1));
+    private static final int BITRK = (1 << (SIZE_B - 1));
 
     /**
      * test whether value is a constant
      */
-    public static boolean ISK(int x) {
+    private static boolean ISK(int x) {
         return 0 != ((x) & BITRK);
     }
 
-    /**
-     * gets the index of the constant
-     */
-    public static int INDEXK(int r) {
-        return ((int) (r) & ~BITRK);
-    }
-
-    public static final int MAXINDEXRK = (BITRK - 1);
+    private static final int MAXINDEXRK = (BITRK - 1);
 
     /**
      * code a constant index as a RK value
      */
-    public static int RKASK(int x) {
+    private static int RKASK(int x) {
         return ((x) | BITRK);
     }
 
     /**
-     ** invalid register that fits in 8 bits
+     * * invalid register that fits in 8 bits
      */
-    public static final int NO_REG = MAXARG_A;
+    private static final int NO_REG = MAXARG_A;
 
 
     /*
@@ -1422,63 +1391,63 @@ public class FuncState {
 
     public static final int OP_LOADK = 1;/*	A Bx	R(A) := Kst(Bx)					*/
 
-    public static final int OP_LOADBOOL = 2;/*	A B C	R(A) := (Bool)B; if (C) pc++			*/
+    private static final int OP_LOADBOOL = 2;/*	A B C	R(A) := (Bool)B; if (C) pc++			*/
 
-    public static final int OP_LOADNIL = 3; /*	A B	R(A) := ... := R(B) := nil			*/
+    private static final int OP_LOADNIL = 3; /*	A B	R(A) := ... := R(B) := nil			*/
 
     public static final int OP_GETUPVAL = 4; /*	A B	R(A) := UpValue[B]				*/
 
-    public static final int OP_GETGLOBAL = 5; /*	A Bx	R(A) := Gbl[Kst(Bx)]				*/
+    private static final int OP_GETGLOBAL = 5; /*	A Bx	R(A) := Gbl[Kst(Bx)]				*/
 
-    public static final int OP_GETTABLE = 6; /*	A B C	R(A) := R(B)[RK(C)]				*/
+    private static final int OP_GETTABLE = 6; /*	A B C	R(A) := R(B)[RK(C)]				*/
 
-    public static final int OP_SETGLOBAL = 7; /*	A Bx	Gbl[Kst(Bx)] := R(A)				*/
+    private static final int OP_SETGLOBAL = 7; /*	A Bx	Gbl[Kst(Bx)] := R(A)				*/
 
-    public static final int OP_SETUPVAL = 8; /*	A B	UpValue[B] := R(A)				*/
+    private static final int OP_SETUPVAL = 8; /*	A B	UpValue[B] := R(A)				*/
 
     public static final int OP_SETTABLE = 9; /*	A B C	R(A)[RK(B)] := RK(C)				*/
 
     public static final int OP_NEWTABLE = 10; /*	A B C	R(A) := {} (size = B,C)				*/
 
-    public static final int OP_SELF = 11; /*	A B C	R(A+1) := R(B); R(A) := R(B)[RK(C)]		*/
+    private static final int OP_SELF = 11; /*	A B C	R(A+1) := R(B); R(A) := R(B)[RK(C)]		*/
 
-    public static final int OP_ADD = 12; /*	A B C	R(A) := RK(B) + RK(C)				*/
+    private static final int OP_ADD = 12; /*	A B C	R(A) := RK(B) + RK(C)				*/
 
-    public static final int OP_SUB = 13; /*	A B C	R(A) := RK(B) - RK(C)				*/
+    private static final int OP_SUB = 13; /*	A B C	R(A) := RK(B) - RK(C)				*/
 
-    public static final int OP_MUL = 14; /*	A B C	R(A) := RK(B) * RK(C)				*/
+    private static final int OP_MUL = 14; /*	A B C	R(A) := RK(B) * RK(C)				*/
 
-    public static final int OP_DIV = 15; /*	A B C	R(A) := RK(B) / RK(C)				*/
+    private static final int OP_DIV = 15; /*	A B C	R(A) := RK(B) / RK(C)				*/
 
-    public static final int OP_MOD = 16; /*	A B C	R(A) := RK(B) % RK(C)				*/
+    private static final int OP_MOD = 16; /*	A B C	R(A) := RK(B) % RK(C)				*/
 
-    public static final int OP_POW = 17; /*	A B C	R(A) := RK(B) ^ RK(C)				*/
+    private static final int OP_POW = 17; /*	A B C	R(A) := RK(B) ^ RK(C)				*/
 
-    public static final int OP_UNM = 18; /*	A B	R(A) := -R(B)					*/
+    private static final int OP_UNM = 18; /*	A B	R(A) := -R(B)					*/
 
-    public static final int OP_NOT = 19; /*	A B	R(A) := not R(B)				*/
+    private static final int OP_NOT = 19; /*	A B	R(A) := not R(B)				*/
 
-    public static final int OP_LEN = 20; /*	A B	R(A) := length of R(B)				*/
+    private static final int OP_LEN = 20; /*	A B	R(A) := length of R(B)				*/
 
-    public static final int OP_CONCAT = 21; /*	A B C	R(A) := R(B).. ... ..R(C)			*/
+    private static final int OP_CONCAT = 21; /*	A B C	R(A) := R(B).. ... ..R(C)			*/
 
-    public static final int OP_JMP = 22; /*	sBx	pc+=sBx					*/
+    private static final int OP_JMP = 22; /*	sBx	pc+=sBx					*/
 
-    public static final int OP_EQ = 23; /*	A B C	if ((RK(B) == RK(C)) ~= A) then pc++		*/
+    private static final int OP_EQ = 23; /*	A B C	if ((RK(B) == RK(C)) ~= A) then pc++		*/
 
-    public static final int OP_LT = 24; /*	A B C	if ((RK(B) <  RK(C)) ~= A) then pc++  		*/
+    private static final int OP_LT = 24; /*	A B C	if ((RK(B) <  RK(C)) ~= A) then pc++  		*/
 
-    public static final int OP_LE = 25; /*	A B C	if ((RK(B) <= RK(C)) ~= A) then pc++  		*/
+    private static final int OP_LE = 25; /*	A B C	if ((RK(B) <= RK(C)) ~= A) then pc++  		*/
 
-    public static final int OP_TEST = 26; /*	A C	if not (R(A) <=> C) then pc++			*/
+    private static final int OP_TEST = 26; /*	A C	if not (R(A) <=> C) then pc++			*/
 
-    public static final int OP_TESTSET = 27; /*	A B C	if (R(B) <=> C) then R(A) := R(B) else pc++	*/
+    private static final int OP_TESTSET = 27; /*	A B C	if (R(B) <=> C) then R(A) := R(B) else pc++	*/
 
     public static final int OP_CALL = 28; /*	A B C	R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1)) */
 
     public static final int OP_TAILCALL = 29; /*	A B C	return R(A)(R(A+1), ... ,R(A+B-1))		*/
 
-    public static final int OP_RETURN = 30; /*	A B	return R(A), ... ,R(A+B-2)	(see note)	*/
+    private static final int OP_RETURN = 30; /*	A B	return R(A), ... ,R(A+B-2)	(see note)	*/
 
     public static final int OP_FORLOOP = 31; /*	A sBx	R(A)+=R(A+2);
      if R(A) <?= R(A+1) then { pc+=sBx; R(A+3)=R(A) }*/
@@ -1488,7 +1457,7 @@ public class FuncState {
     public static final int OP_TFORLOOP = 33; /*	A C	R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2)); 
      if R(A+3) ~= nil then R(A+2)=R(A+3) else pc++	*/
 
-    public static final int OP_SETLIST = 34; /*	A B C	R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B	*/
+    private static final int OP_SETLIST = 34; /*	A B C	R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B	*/
 
     public static final int OP_CLOSE = 35; /*	A 	close all variables in the stack up to (>=) R(A)*/
 
@@ -1496,8 +1465,6 @@ public class FuncState {
 
     public static final int OP_VARARG = 37; /*	A B	R(A), R(A+1), ..., R(A+B-1) = vararg		*/
 
-
-    public static final int NUM_OPCODES = OP_VARARG + 1;
 
     /*===========================================================================
      Notes:
@@ -1526,64 +1493,63 @@ public class FuncState {
      ** bit 6: instruction set register A
      ** bit 7: operator is a test
      */
-    public static final int[] luaP_opmodes = {
+    private static final int[] luaP_opmodes = {
         /*   T        A           B             C          mode		   opcode	*/
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_MOVE */
-        (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_LOADK */
-        (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_LOADBOOL */
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_LOADNIL */
-        (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_GETUPVAL */
-        (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_GETGLOBAL */
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgK << 2) | (iABC), /* OP_GETTABLE */
-        (0 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_SETGLOBAL */
-        (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_SETUPVAL */
-        (0 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_SETTABLE */
-        (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_NEWTABLE */
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgK << 2) | (iABC), /* OP_SELF */
-        (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_ADD */
-        (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_SUB */
-        (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_MUL */
-        (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_DIV */
-        (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_MOD */
-        (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_POW */
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_UNM */
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_NOT */
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_LEN */
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgR << 2) | (iABC), /* OP_CONCAT */
-        (0 << 7) | (0 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_JMP */
-        (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_EQ */
-        (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_LT */
-        (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_LE */
-        (1 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgU << 2) | (iABC), /* OP_TEST */
-        (1 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgU << 2) | (iABC), /* OP_TESTSET */
-        (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_CALL */
-        (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_TAILCALL */
-        (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_RETURN */
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_FORLOOP */
-        (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_FORPREP */
-        (1 << 7) | (0 << 6) | (OpArgN << 4) | (OpArgU << 2) | (iABC), /* OP_TFORLOOP */
-        (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_SETLIST */
-        (0 << 7) | (0 << 6) | (OpArgN << 4) | (OpArgN << 2) | (iABC), /* OP_CLOSE */
-        (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABx), /* OP_CLOSURE */
-        (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_VARARG */};
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_MOVE */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_LOADK */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_LOADBOOL */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_LOADNIL */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_GETUPVAL */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_GETGLOBAL */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgK << 2) | (iABC), /* OP_GETTABLE */
+            (0 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgN << 2) | (iABx), /* OP_SETGLOBAL */
+            (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_SETUPVAL */
+            (0 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_SETTABLE */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_NEWTABLE */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgK << 2) | (iABC), /* OP_SELF */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_ADD */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_SUB */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_MUL */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_DIV */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_MOD */
+            (0 << 7) | (1 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_POW */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_UNM */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_NOT */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iABC), /* OP_LEN */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgR << 2) | (iABC), /* OP_CONCAT */
+            (0 << 7) | (0 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_JMP */
+            (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_EQ */
+            (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_LT */
+            (1 << 7) | (0 << 6) | (OpArgK << 4) | (OpArgK << 2) | (iABC), /* OP_LE */
+            (1 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgU << 2) | (iABC), /* OP_TEST */
+            (1 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgU << 2) | (iABC), /* OP_TESTSET */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_CALL */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_TAILCALL */
+            (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_RETURN */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_FORLOOP */
+            (0 << 7) | (1 << 6) | (OpArgR << 4) | (OpArgN << 2) | (iAsBx), /* OP_FORPREP */
+            (1 << 7) | (0 << 6) | (OpArgN << 4) | (OpArgU << 2) | (iABC), /* OP_TFORLOOP */
+            (0 << 7) | (0 << 6) | (OpArgU << 4) | (OpArgU << 2) | (iABC), /* OP_SETLIST */
+            (0 << 7) | (0 << 6) | (OpArgN << 4) | (OpArgN << 2) | (iABC), /* OP_CLOSE */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABx), /* OP_CLOSURE */
+            (0 << 7) | (1 << 6) | (OpArgU << 4) | (OpArgN << 2) | (iABC), /* OP_VARARG */};
 
-    public static int getOpMode(int m) {
+    private static int getOpMode(int m) {
         return luaP_opmodes[m] & 3;
     }
 
-    public static int getBMode(int m) {
+    private static int getBMode(int m) {
         return (luaP_opmodes[m] >> 4) & 3;
     }
 
-    public static int getCMode(int m) {
+    private static int getCMode(int m) {
         return (luaP_opmodes[m] >> 2) & 3;
     }
 
-    public static boolean testTMode(int m) {
+    private static boolean testTMode(int m) {
         return 0 != (luaP_opmodes[m] & (1 << 7));
     }
 
     /* number of list items to accumulate before a SETLIST instruction */
-    public static final int LFIELDS_PER_FLUSH = 50;
-
+    private static final int LFIELDS_PER_FLUSH = 50;
 }

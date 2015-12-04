@@ -176,7 +176,7 @@ public class LuaThread {
         // TODO: use binary search instead?
         int loopIndex = liveUpvalues.size();
         while (--loopIndex >= 0) {
-            UpValue uv = (UpValue) liveUpvalues.get(loopIndex);
+            UpValue uv = liveUpvalues.get(loopIndex);
             if (uv.index == scanIndex) {
                 return uv;
             }

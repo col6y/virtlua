@@ -26,39 +26,24 @@ package org.luaj.kahluafork.compiler;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
+import java.util.HashMap;
 import java.util.Hashtable;
+
 import org.luaj.kahluafork.compiler.FuncState.BlockCnt;
 import se.krka.kahlua.vm.LuaException;
 import se.krka.kahlua.vm.LuaPrototype;
 
 public class LexState {
 
-    public int nCcalls;
-    Hashtable strings = new Hashtable();
+    private int nCcalls;
+    private final HashMap<String, String> strings = new HashMap<>();
 
-    protected static final String RESERVED_LOCAL_VAR_FOR_CONTROL = "(for control)";
-    protected static final String RESERVED_LOCAL_VAR_FOR_STATE = "(for state)";
-    protected static final String RESERVED_LOCAL_VAR_FOR_GENERATOR = "(for generator)";
-    protected static final String RESERVED_LOCAL_VAR_FOR_STEP = "(for step)";
-    protected static final String RESERVED_LOCAL_VAR_FOR_LIMIT = "(for limit)";
-    protected static final String RESERVED_LOCAL_VAR_FOR_INDEX = "(for index)";
-
-    // keywords array
-    protected static final String[] RESERVED_LOCAL_VAR_KEYWORDS = new String[]{
-        RESERVED_LOCAL_VAR_FOR_CONTROL,
-        RESERVED_LOCAL_VAR_FOR_GENERATOR,
-        RESERVED_LOCAL_VAR_FOR_INDEX,
-        RESERVED_LOCAL_VAR_FOR_LIMIT,
-        RESERVED_LOCAL_VAR_FOR_STATE,
-        RESERVED_LOCAL_VAR_FOR_STEP
-    };
-    private static final Hashtable RESERVED_LOCAL_VAR_KEYWORDS_TABLE = new Hashtable();
-
-    static {
-        for (int i = 0; i < RESERVED_LOCAL_VAR_KEYWORDS.length; i++) {
-            RESERVED_LOCAL_VAR_KEYWORDS_TABLE.put(RESERVED_LOCAL_VAR_KEYWORDS[i], Boolean.TRUE);
-        }
-    }
+    private static final String RESERVED_LOCAL_VAR_FOR_CONTROL = "(for control)";
+    private static final String RESERVED_LOCAL_VAR_FOR_STATE = "(for state)";
+    private static final String RESERVED_LOCAL_VAR_FOR_GENERATOR = "(for generator)";
+    private static final String RESERVED_LOCAL_VAR_FOR_STEP = "(for step)";
+    private static final String RESERVED_LOCAL_VAR_FOR_LIMIT = "(for limit)";
+    private static final String RESERVED_LOCAL_VAR_FOR_INDEX = "(for index)";
 
     private static final int EOZ = (-1);
     private static final int MAXSRC = 80;
@@ -66,16 +51,12 @@ public class LexState {
     private static final int UCHAR_MAX = 255; // TODO, convert to unicode CHAR_MAX? 
     private static final int LUAI_MAXCCALLS = 200;
 
-    private static final String LUA_QS(String s) {
+    private static String LUA_QS(String s) {
         return "'" + s + "'";
     }
 
-    private static final String LUA_QL(Object o) {
+    private static String LUA_QL(Object o) {
         return LUA_QS(String.valueOf(o));
-    }
-
-    public static boolean isReservedKeyword(String varName) {
-        return RESERVED_LOCAL_VAR_KEYWORDS_TABLE.containsKey(varName);
     }
 
     /*
@@ -87,14 +68,27 @@ public class LexState {
     /*
      ** grep "ORDER OPR" if you change these enums
      */
-    static final int OPR_ADD = 0, OPR_SUB = 1, OPR_MUL = 2, OPR_DIV = 3, OPR_MOD = 4, OPR_POW = 5,
-            OPR_CONCAT = 6,
-            OPR_NE = 7, OPR_EQ = 8,
-            OPR_LT = 9, OPR_LE = 10, OPR_GT = 11, OPR_GE = 12,
-            OPR_AND = 13, OPR_OR = 14,
-            OPR_NOBINOPR = 15;
+    static final int OPR_ADD = 0;
+    static final int OPR_SUB = 1;
+    static final int OPR_MUL = 2;
+    static final int OPR_DIV = 3;
+    static final int OPR_MOD = 4;
+    static final int OPR_POW = 5;
+    static final int OPR_CONCAT = 6;
+    static final int OPR_NE = 7;
+    static final int OPR_EQ = 8;
+    static final int OPR_LT = 9;
+    static final int OPR_LE = 10;
+    static final int OPR_GT = 11;
+    static final int OPR_GE = 12;
+    static final int OPR_AND = 13;
+    static final int OPR_OR = 14;
+    private static final int OPR_NOBINOPR = 15;
 
-    static final int OPR_MINUS = 0, OPR_NOT = 1, OPR_LEN = 2, OPR_NOUNOPR = 3;
+    static final int OPR_MINUS = 0;
+    static final int OPR_NOT = 1;
+    static final int OPR_LEN = 2;
+    private static final int OPR_NOUNOPR = 3;
 
     /* exp kind */
     static final int VVOID = 0, /* no value */
@@ -127,56 +121,80 @@ public class LexState {
             this.r = other.r;
             this.ts = other.ts;
         }
-    };
+    }
 
-    int current;  /* current character (charint) */
+    private int current;  /* current character (charint) */
 
-    int linenumber;  /* input line counter */
+    private int linenumber;  /* input line counter */
 
     int lastline;  /* line of last token `consumed' */
 
-    final Token t = new Token();  /* current token */
+    private final Token t = new Token();  /* current token */
 
-    final Token lookahead = new Token();  /* look ahead token */
+    private final Token lookahead = new Token();  /* look ahead token */
 
-    FuncState fs;  /* `FuncState' is private to the parser */
+    private FuncState fs;  /* `FuncState' is private to the parser */
 
-    Reader z;  /* input stream */
+    private Reader z;  /* input stream */
 
-    byte[] buff;  /* buffer for tokens */
+    private byte[] buff;  /* buffer for tokens */
 
-    int nbuff; /* length of buffer */
+    private int nbuff; /* length of buffer */
 
-    String source;  /* current source name */
+    private String source;  /* current source name */
 
-    byte decpoint;  /* locale decimal point */
+    private byte decpoint;  /* locale decimal point */
 
     /* ORDER RESERVED */
-    final static String luaX_tokens[] = {
-        "and", "break", "do", "else", "elseif",
-        "end", "false", "for", "function", "if",
-        "in", "local", "nil", "not", "or", "repeat",
-        "return", "then", "true", "until", "while",
-        "..", "...", "==", ">=", "<=", "~=",
-        "<number>", "<name>", "<string>", "<eof>",};
+    private final static String[] luaX_tokens = {
+            "and", "break", "do", "else", "elseif",
+            "end", "false", "for", "function", "if",
+            "in", "local", "nil", "not", "or", "repeat",
+            "return", "then", "true", "until", "while",
+            "..", "...", "==", ">=", "<=", "~=",
+            "<number>", "<name>", "<string>", "<eof>",};
 
-    final static int /* terminal symbols denoted by reserved words */ TK_AND = 257, TK_BREAK = 258, TK_DO = 259, TK_ELSE = 260, TK_ELSEIF = 261,
-            TK_END = 262, TK_FALSE = 263, TK_FOR = 264, TK_FUNCTION = 265, TK_IF = 266,
-            TK_IN = 267, TK_LOCAL = 268, TK_NIL = 269, TK_NOT = 270, TK_OR = 271, TK_REPEAT = 272,
-            TK_RETURN = 273, TK_THEN = 274, TK_TRUE = 275, TK_UNTIL = 276, TK_WHILE = 277,
-            /* other terminal symbols */
-            TK_CONCAT = 278, TK_DOTS = 279, TK_EQ = 280, TK_GE = 281, TK_LE = 282, TK_NE = 283,
-            TK_NUMBER = 284, TK_NAME = 285, TK_STRING = 286, TK_EOS = 287;
+    private final static int /* terminal symbols denoted by reserved words */ TK_AND = 257;
+    private final static int TK_BREAK = 258;
+    private final static int TK_DO = 259;
+    private final static int TK_ELSE = 260;
+    private final static int TK_ELSEIF = 261;
+    private final static int TK_END = 262;
+    private final static int TK_FALSE = 263;
+    private final static int TK_FOR = 264;
+    private final static int TK_FUNCTION = 265;
+    private final static int TK_IF = 266;
+    private final static int TK_IN = 267;
+    private final static int TK_LOCAL = 268;
+    private final static int TK_NIL = 269;
+    private final static int TK_NOT = 270;
+    private final static int TK_OR = 271;
+    private final static int TK_REPEAT = 272;
+    private final static int TK_RETURN = 273;
+    private final static int TK_THEN = 274;
+    private final static int TK_TRUE = 275;
+    private final static int TK_UNTIL = 276;
+    private final static int TK_WHILE = 277;
+    private final static int/* other terminal symbols */
+            TK_CONCAT = 278;
+    private final static int TK_DOTS = 279;
+    private final static int TK_EQ = 280;
+    private final static int TK_GE = 281;
+    private final static int TK_LE = 282;
+    private final static int TK_NE = 283;
+    private final static int TK_NUMBER = 284;
+    private final static int TK_NAME = 285;
+    private final static int TK_STRING = 286;
+    private final static int TK_EOS = 287;
 
-    final static int FIRST_RESERVED = TK_AND;
-    final static int NUM_RESERVED = TK_WHILE + 1 - FIRST_RESERVED;
+    private final static int FIRST_RESERVED = TK_AND;
+    private final static int NUM_RESERVED = TK_WHILE + 1 - FIRST_RESERVED;
 
-    final static Hashtable RESERVED = new Hashtable();
+    private final static HashMap<String, Integer> RESERVED = new HashMap<>();
 
     static {
         for (int i = 0; i < NUM_RESERVED; i++) {
-            String ts = luaX_tokens[i];
-            RESERVED.put(ts, new Integer(FIRST_RESERVED + i));
+            RESERVED.put(luaX_tokens[i], FIRST_RESERVED + i);
         }
     }
 
@@ -204,7 +222,6 @@ public class LexState {
     public static LuaPrototype compile(int firstByte, Reader z, String name) {
         LexState lexstate = new LexState(z);
         FuncState funcstate = new FuncState();
-        // lexstate.buff = buff;
         lexstate.setinput(firstByte, z, name);
         lexstate.open_func(funcstate);
         /* main func. is always vararg */
@@ -221,12 +238,12 @@ public class LexState {
         return funcstate.f;
     }
 
-    public LexState(Reader stream) {
+    private LexState(Reader stream) {
         this.z = stream;
         this.buff = new byte[32];
     }
 
-    void nextChar() {
+    private void nextChar() {
         try {
             current = z.read();
         } catch (IOException e) {
@@ -235,26 +252,26 @@ public class LexState {
         }
     }
 
-    boolean currIsNewline() {
+    private boolean currIsNewline() {
         return current == '\n' || current == '\r';
     }
 
-    void save_and_next() {
+    private void save_and_next() {
         save(current);
         nextChar();
     }
 
-    void save(int c) {
+    private void save(int c) {
         if (buff == null || nbuff + 1 > buff.length) {
             buff = FuncState.realloc(buff, nbuff * 2 + 1);
         }
         buff[nbuff++] = (byte) c;
     }
 
-    String token2str(int token) {
+    private String token2str(int token) {
         if (token < FIRST_RESERVED) {
             return iscntrl(token)
-                    ? "char(" + ((int) token) + ")"
+                    ? "char(" + token + ")"
                     : String.valueOf((char) token);
         } else {
             return luaX_tokens[token - FIRST_RESERVED];
@@ -265,7 +282,7 @@ public class LexState {
         return token < ' ';
     }
 
-    String txtToken(int token) {
+    private String txtToken(int token) {
         switch (token) {
             case TK_NAME:
             case TK_STRING:
@@ -277,7 +294,7 @@ public class LexState {
     }
 
     void lexerror(String msg, int token) {
-        String cid = chunkid(source.toString()); // TODO: get source name from source
+        String cid = chunkid(source); // TODO: get source name from source
         String errorMessage;
         if (token != 0) {
             errorMessage = cid + ":" + linenumber + ": " + msg + " near `" + txtToken(token) + "`";
@@ -287,7 +304,7 @@ public class LexState {
         throw new LuaException(errorMessage);
     }
 
-    String chunkid(String source) {
+    private String chunkid(String source) {
         if (source.startsWith("=")) {
             return source.substring(1);
         }
@@ -309,11 +326,11 @@ public class LexState {
         lexerror(msg, t.token);
     }
 
-    String newstring(String s) {
+    private String newstring(String s) {
         return newTString(s);
     }
 
-    String newstring(byte[] chars, int offset, int len) {
+    private String newstring(byte[] chars, int offset, int len) {
         try {
             String s = new String(chars, offset, len, "UTF-8");
             return newTString(s);
@@ -322,8 +339,8 @@ public class LexState {
         }
     }
 
-    public String newTString(String s) {
-        String t = (String) strings.get(s);
+    private String newTString(String s) {
+        String t = strings.get(s);
         if (t == null) {
             t = s;
             strings.put(t, t);
@@ -331,7 +348,7 @@ public class LexState {
         return t;
     }
 
-    void inclinenumber() {
+    private void inclinenumber() {
         int old = current;
         FuncState._assert(currIsNewline());
         nextChar(); /* skip '\n' or '\r' */
@@ -345,7 +362,7 @@ public class LexState {
         }
     }
 
-    void setinput(int firstByte, Reader z, String source) {
+    private void setinput(int firstByte, Reader z, String source) {
         this.decpoint = '.';
         this.lookahead.token = TK_EOS; /* no look-ahead token */
 
@@ -374,7 +391,7 @@ public class LexState {
      ** LEXICAL ANALYZER
      ** =======================================================
      */
-    boolean check_next(String set) {
+    private boolean check_next(String set) {
         if (set.indexOf(current) < 0) {
             return false;
         }
@@ -382,7 +399,7 @@ public class LexState {
         return true;
     }
 
-    void buffreplace(byte from, byte to) {
+    private void buffreplace(byte from, byte to) {
         int n = nbuff;
         byte[] p = buff;
         while ((--n) >= 0) {
@@ -392,7 +409,7 @@ public class LexState {
         }
     }
 
-    boolean str2d(String str, Token token) {
+    private void str2d(String str, Token token) {
         double d;
         str = str.trim(); // TODO: get rid of this
         if (str.startsWith("0x")) {
@@ -401,7 +418,6 @@ public class LexState {
             d = Double.parseDouble(str);
         }
         token.r = d;
-        return true;
     }
 
     //
@@ -420,7 +436,7 @@ public class LexState {
     //	  }
     //	}
     //
-	/*
+    /*
      void trydecpoint(String str, SemInfo seminfo) {
      NumberFormat nf = NumberFormat.getInstance();
      try {
@@ -432,7 +448,7 @@ public class LexState {
      }
      }
      */
-    void read_numeral(Token token) {
+    private void read_numeral(Token token) {
         FuncState._assert(isdigit(current));
         do {
             save_and_next();
@@ -453,7 +469,7 @@ public class LexState {
         str2d(str, token);
     }
 
-    int skip_sep() {
+    private int skip_sep() {
         int count = 0;
         int s = current;
         FuncState._assert(s == '[' || s == ']');
@@ -465,7 +481,7 @@ public class LexState {
         return (current == s) ? count : (-count) - 1;
     }
 
-    void read_long_string(Token token, int sep) {
+    private void read_long_string(Token token, int sep) {
         int cont = 0;
         save_and_next(); /* skip 2nd `[' */
 
@@ -473,7 +489,7 @@ public class LexState {
             inclinenumber(); /* skip it */
 
         }
-        for (boolean endloop = false; !endloop;) {
+        for (boolean endloop = false; !endloop; ) {
             switch (current) {
                 case EOZ:
                     lexerror((token != null) ? "unfinished long string"
@@ -520,7 +536,7 @@ public class LexState {
         }
     }
 
-    void read_string(int del, Token token) {
+    private void read_string(int del, Token token) {
         save_and_next();
         while (current != del) {
             switch (current) {
@@ -608,7 +624,7 @@ public class LexState {
         token.ts = newstring(buff, 1, nbuff - 2);
     }
 
-    int llex(Token token) {
+    private int llex(Token token) {
         nbuff = 0;
         while (true) {
             switch (current) {
@@ -717,7 +733,6 @@ public class LexState {
                     if (isspace(current)) {
                         FuncState._assert(!currIsNewline());
                         nextChar();
-                        continue;
                     } else if (isdigit(current)) {
                         read_numeral(token);
                         return TK_NUMBER;
@@ -729,7 +744,7 @@ public class LexState {
                         } while (isalnum(current) || current == '_');
                         ts = newstring(buff, 0, nbuff);
                         if (RESERVED.containsKey(ts)) {
-                            return ((Integer) RESERVED.get(ts)).intValue();
+                            return RESERVED.get(ts);
                         } else {
                             token.ts = ts;
                             return TK_NAME;
@@ -745,7 +760,7 @@ public class LexState {
         }
     }
 
-    void next() {
+    private void next() {
         lastline = linenumber;
         if (lookahead.token != TK_EOS) { /* is there a look-ahead token? */
 
@@ -759,12 +774,12 @@ public class LexState {
         }
     }
 
-    void lookahead() {
+    private void lookahead() {
         FuncState._assert(lookahead.token == TK_EOS);
         lookahead.token = llex(lookahead);
     }
 
-	// =============================================================
+    // =============================================================
     // from lcode.h
     // =============================================================
     // =============================================================
@@ -777,7 +792,7 @@ public class LexState {
         int info, aux;
         private double _nval;
         private boolean has_nval;
-        
+
         String lastname = null;
 
         public void setNval(double r) {
@@ -820,7 +835,7 @@ public class LexState {
         }
     }
 
-    boolean hasmultret(int k) {
+    private boolean hasmultret(int k) {
         return ((k) == VCALL || (k) == VVARARG);
     }
 
@@ -830,11 +845,11 @@ public class LexState {
     /*
      * * prototypes for recursive non-terminal functions
      */
-    void error_expected(int token) {
+    private void error_expected(int token) {
         syntaxerror(LUA_QS(token2str(token)) + " expected");
     }
 
-    boolean testnext(int c) {
+    private boolean testnext(int c) {
         if (t.token == c) {
             next();
             return true;
@@ -843,24 +858,24 @@ public class LexState {
         }
     }
 
-    void check(int c) {
+    private void check(int c) {
         if (t.token != c) {
             error_expected(c);
         }
     }
 
-    void checknext(int c) {
+    private void checknext(int c) {
         check(c);
         next();
     }
 
-    void check_condition(boolean c, String msg) {
+    private void check_condition(boolean c, String msg) {
         if (!(c)) {
             syntaxerror(msg);
         }
     }
 
-    void check_match(int what, int who, int where) {
+    private void check_match(int what, int who, int where) {
         if (!testnext(what)) {
             if (where == linenumber) {
                 error_expected(what);
@@ -872,7 +887,7 @@ public class LexState {
         }
     }
 
-    String str_checkname() {
+    private String str_checkname() {
         String ts;
         check(TK_NAME);
         ts = t.ts;
@@ -880,15 +895,15 @@ public class LexState {
         return ts;
     }
 
-    void codestring(expdesc e, String s) {
+    private void codestring(expdesc e, String s) {
         e.init(VK, fs.stringK(s));
     }
 
-    void checkname(expdesc e) {
+    private void checkname(expdesc e) {
         codestring(e, str_checkname());
     }
 
-    int registerlocalvar(String varname) {
+    private int registerlocalvar(String varname) {
         FuncState fs = this.fs;
         if (fs.locvars == null || fs.nlocvars + 1 > fs.locvars.length) {
             fs.locvars = FuncState.realloc(fs.locvars, fs.nlocvars * 2 + 1);
@@ -897,22 +912,22 @@ public class LexState {
         return fs.nlocvars++;
     }
 
-//
+    //
 //	#define new_localvarliteral(ls,v,n) \
 //	  this.new_localvar(luaX_newstring(ls, "" v, (sizeof(v)/sizeof(char))-1), n)
 //
-    void new_localvarliteral(String v, int n) {
+    private void new_localvarliteral(String v, int n) {
         String ts = newstring(v);
         new_localvar(ts, n);
     }
 
-    void new_localvar(String name, int n) {
+    private void new_localvar(String name, int n) {
         FuncState fs = this.fs;
         fs.checklimit(fs.nactvar + n + 1, FuncState.LUAI_MAXVARS, "local variables");
         fs.actvar[fs.nactvar + n] = (short) registerlocalvar(name);
     }
 
-    void adjustlocalvars(int nvars) {
+    private void adjustlocalvars(int nvars) {
         FuncState fs = this.fs;
         fs.nactvar = (fs.nactvar + nvars);
     }
@@ -922,7 +937,7 @@ public class LexState {
         fs.nactvar = tolevel;
     }
 
-    void singlevar(expdesc var) {
+    private void singlevar(expdesc var) {
         String varname = this.str_checkname();
         var.lastname = varname;
         FuncState fs = this.fs;
@@ -932,7 +947,7 @@ public class LexState {
         }
     }
 
-    void adjust_assign(int nvars, int nexps, expdesc e) {
+    private void adjust_assign(int nvars, int nexps, expdesc e) {
         FuncState fs = this.fs;
         int extra = nvars - nexps;
         if (hasmultret(e.k)) {
@@ -959,17 +974,17 @@ public class LexState {
         }
     }
 
-    void enterlevel() {
+    private void enterlevel() {
         if (++nCcalls > LUAI_MAXCCALLS) {
             lexerror("chunk has too many syntax levels", 0);
         }
     }
 
-    void leavelevel() {
+    private void leavelevel() {
         nCcalls--;
     }
 
-    void pushclosure(FuncState func, expdesc v) {
+    private void pushclosure(FuncState func, expdesc v) {
         FuncState fs = this.fs;
         LuaPrototype f = fs.f;
         if (f.prototypes == null || fs.np + 1 > f.prototypes.length) {
@@ -984,7 +999,7 @@ public class LexState {
         }
     }
 
-    void open_func(FuncState fs) {
+    private void open_func(FuncState fs) {
         LuaPrototype f = new LuaPrototype();
         if (this.fs != null) {
             f.name = this.fs.f.name;
@@ -1007,10 +1022,10 @@ public class LexState {
 
         //fs.h = new LTable();
 
-        fs.htable = new Hashtable();
+        fs.htable = new HashMap<>();
     }
 
-    void close_func() {
+    private void close_func() {
         FuncState fs = this.fs;
         LuaPrototype f = fs.f;
         f.isVararg = fs.isVararg != 0;
@@ -1038,7 +1053,7 @@ public class LexState {
     /*============================================================*/
     /* GRAMMAR RULES */
     /*============================================================*/
-    void field(expdesc v) {
+    private void field(expdesc v) {
         /* field -> ['.' | ':'] NAME */
         FuncState fs = this.fs;
         expdesc key = new expdesc();
@@ -1051,7 +1066,7 @@ public class LexState {
         fs.indexed(v, key);
     }
 
-    void yindex(expdesc v) {
+    private void yindex(expdesc v) {
         /* index -> '[' expr ']' */
         this.next(); /* skip the '[' */
 
@@ -1068,7 +1083,7 @@ public class LexState {
      */
     static class ConsControl {
 
-        expdesc v = new expdesc(); /* last list item read */
+        final expdesc v = new expdesc(); /* last list item read */
 
         expdesc t; /* table descriptor */
 
@@ -1078,9 +1093,9 @@ public class LexState {
 
         int tostore; /* number of array elements pending to be stored */
 
-    };
+    }
 
-    void recfield(ConsControl cc) {
+    private void recfield(ConsControl cc) {
         /* recfield -> (NAME | `['exp1`]') = exp1 */
         FuncState fs = this.fs;
         int reg = this.fs.freereg;
@@ -1102,14 +1117,14 @@ public class LexState {
 
     }
 
-    void listfield(ConsControl cc) {
+    private void listfield(ConsControl cc) {
         this.expr(cc.v);
         fs.checklimit(cc.na, MAX_INT, "items in a constructor");
         cc.na++;
         cc.tostore++;
     }
 
-    void constructor(expdesc t) {
+    private void constructor(expdesc t) {
         /* constructor -> ?? */
         FuncState fs = this.fs;
         int line = this.linenumber;
@@ -1166,7 +1181,7 @@ public class LexState {
      ** (eeeeexxx), where the real value is (1xxx) * 2^(eeeee - 1) if
      ** eeeee != 0 and (xxx) otherwise.
      */
-    static int luaO_int2fb(int x) {
+    private static int luaO_int2fb(int x) {
         int e = 0;  /* expoent */
 
         while (x >= 16) {
@@ -1176,13 +1191,13 @@ public class LexState {
         if (x < 8) {
             return x;
         } else {
-            return ((e + 1) << 3) | (((int) x) - 8);
+            return ((e + 1) << 3) | (x - 8);
         }
     }
 
 
     /* }====================================================================== */
-    void parlist() {
+    private void parlist() {
         /* parlist -> [ param { `,' param } ] */
         FuncState fs = this.fs;
         LuaPrototype f = fs.f;
@@ -1214,7 +1229,7 @@ public class LexState {
 
     }
 
-    void body(expdesc e, boolean needself, int line, String fname) {
+    private void body(expdesc e, boolean needself, int line, String fname) {
         /* body -> `(' parlist `)' chunk END */
         FuncState new_fs = new FuncState();
         open_func(new_fs);
@@ -1230,13 +1245,12 @@ public class LexState {
         this.parlist();
         this.checknext(')');
         this.chunk();
-        new_fs.lastlinedefined = this.linenumber;
         this.check_match(TK_END, TK_FUNCTION, line);
         this.close_func();
         this.pushclosure(new_fs, e);
     }
 
-    int explist1(expdesc v) {
+    private int explist1(expdesc v) {
         /* explist1 -> expr { `,' expr } */
         int n = 1; /* at least one expression */
 
@@ -1249,7 +1263,7 @@ public class LexState {
         return n;
     }
 
-    void funcargs(expdesc f) {
+    private void funcargs(expdesc f) {
         FuncState fs = this.fs;
         expdesc args = new expdesc();
         int base, nparams;
@@ -1313,7 +1327,7 @@ public class LexState {
      ** Expression parsing
      ** =======================================================================
      */
-    void prefixexp(expdesc v) {
+    private void prefixexp(expdesc v) {
         /* prefixexp -> NAME | '(' expr ')' */
         switch (this.t.token) {
             case '(': {
@@ -1322,27 +1336,27 @@ public class LexState {
                 this.expr(v);
                 this.check_match(')', '(', line);
                 fs.dischargevars(v);
-                return;
+                break;
             }
             case TK_NAME: {
                 this.singlevar(v);
-                return;
+                break;
             }
             default: {
                 this.syntaxerror("unexpected symbol");
-                return;
+                break;
             }
         }
     }
 
-    void primaryexp(expdesc v) {
+    private void primaryexp(expdesc v) {
         /*
          * primaryexp -> prefixexp { `.' NAME | `[' exp `]' | `:' NAME funcargs |
          * funcargs }
          */
         FuncState fs = this.fs;
         this.prefixexp(v);
-        for (;;) {
+        for (; ; ) {
             switch (this.t.token) {
                 case '.': { /* field */
 
@@ -1380,7 +1394,7 @@ public class LexState {
         }
     }
 
-    void simpleexp(expdesc v) {
+    private void simpleexp(expdesc v) {
         /*
          * simpleexp -> NUMBER | STRING | NIL | true | false | ... | constructor |
          * FUNCTION body | primaryexp
@@ -1435,7 +1449,7 @@ public class LexState {
         this.next();
     }
 
-    int getunopr(int op) {
+    private int getunopr(int op) {
         switch (op) {
             case TK_NOT:
                 return OPR_NOT;
@@ -1448,7 +1462,7 @@ public class LexState {
         }
     }
 
-    int getbinopr(int op) {
+    private int getbinopr(int op) {
         switch (op) {
             case '+':
                 return OPR_ADD;
@@ -1485,28 +1499,28 @@ public class LexState {
         }
     }
 
-    static final int[] priorityLeft = {
-        6, 6, 7, 7, 7, /* `+' `-' `/' `%' */
-        10, 5, /* power and concat (right associative) */
-        3, 3, /* equality and inequality */
-        3, 3, 3, 3, /* order */
-        2, 1, /* logical (and/or) */};
+    private static final int[] priorityLeft = {
+            6, 6, 7, 7, 7, /* `+' `-' `/' `%' */
+            10, 5, /* power and concat (right associative) */
+            3, 3, /* equality and inequality */
+            3, 3, 3, 3, /* order */
+            2, 1, /* logical (and/or) */};
 
-    static final int[] priorityRight = { /* ORDER OPR */
-        6, 6, 7, 7, 7, /* `+' `-' `/' `%' */
-        9, 4, /* power and concat (right associative) */
-        3, 3, /* equality and inequality */
-        3, 3, 3, 3, /* order */
-        2, 1 /* logical (and/or) */};
+    private static final int[] priorityRight = { /* ORDER OPR */
+            6, 6, 7, 7, 7, /* `+' `-' `/' `%' */
+            9, 4, /* power and concat (right associative) */
+            3, 3, /* equality and inequality */
+            3, 3, 3, 3, /* order */
+            2, 1 /* logical (and/or) */};
 
-    static final int UNARY_PRIORITY = 8;  /* priority for unary operators */
+    private static final int UNARY_PRIORITY = 8;  /* priority for unary operators */
 
 
     /*
      ** subexpr -> (simpleexp | unop subexpr) { binop subexpr }
      ** where `binop' is any binary operator with a priority higher than `limit'
      */
-    int subexpr(expdesc v, int limit) {
+    private int subexpr(expdesc v, int limit) {
         int op;
         int uop;
         this.enterlevel();
@@ -1535,7 +1549,7 @@ public class LexState {
 
     }
 
-    void expr(expdesc v) {
+    private void expr(expdesc v) {
         this.subexpr(v, 0);
     }
 
@@ -1545,7 +1559,7 @@ public class LexState {
      ** Rules for Statements
      ** =======================================================================
      */
-    boolean block_follow(int token) {
+    private boolean block_follow(int token) {
         switch (token) {
             case TK_ELSE:
             case TK_ELSEIF:
@@ -1558,7 +1572,7 @@ public class LexState {
         }
     }
 
-    void block() {
+    private void block() {
         /* block -> chunk */
         FuncState fs = this.fs;
         BlockCnt bl = new BlockCnt();
@@ -1577,8 +1591,8 @@ public class LexState {
 
         LHS_assign prev;
         /* variable (global, local, upvalue, or indexed) */
-        expdesc v = new expdesc();
-    };
+        final expdesc v = new expdesc();
+    }
 
 
     /*
@@ -1587,7 +1601,7 @@ public class LexState {
      ** local value in a safe place and use this safe copy in the previous
      ** assignment.
      */
-    void check_conflict(LHS_assign lh, expdesc v) {
+    private void check_conflict(LHS_assign lh, expdesc v) {
         FuncState fs = this.fs;
         int extra = fs.freereg;  /* eventual position to save local variable */
 
@@ -1615,7 +1629,7 @@ public class LexState {
         }
     }
 
-    void assignment(LHS_assign lh, int nvars) {
+    private void assignment(LHS_assign lh, int nvars) {
         expdesc e = new expdesc();
         this.check_condition(VLOCAL <= lh.v.k && lh.v.k <= VINDEXED,
                 "syntax error");
@@ -1652,7 +1666,7 @@ public class LexState {
         fs.storevar(lh.v, e);
     }
 
-    int cond() {
+    private int cond() {
         /* cond -> exp */
         expdesc v = new expdesc();
         /* read condition */
@@ -1665,7 +1679,7 @@ public class LexState {
         return v.f;
     }
 
-    void breakstat() {
+    private void breakstat() {
         FuncState fs = this.fs;
         BlockCnt bl = fs.bl;
         boolean upval = false;
@@ -1682,7 +1696,7 @@ public class LexState {
         bl.breaklist = fs.concat(bl.breaklist, fs.jump());
     }
 
-    void whilestat(int line) {
+    private void whilestat(int line) {
         /* whilestat -> WHILE cond DO block END */
         FuncState fs = this.fs;
         int whileinit;
@@ -1702,7 +1716,7 @@ public class LexState {
 
     }
 
-    void repeatstat(int line) {
+    private void repeatstat(int line) {
         /* repeatstat -> REPEAT block UNTIL cond */
         int condexit;
         FuncState fs = this.fs;
@@ -1740,16 +1754,13 @@ public class LexState {
 
     }
 
-    int exp1() {
+    private void exp1() {
         expdesc e = new expdesc();
-        int k;
         this.expr(e);
-        k = e.k;
         fs.exp2nextreg(e);
-        return k;
     }
 
-    void forbody(int base, int line, int nvars, boolean isnum) {
+    private void forbody(int base, int line, int nvars, boolean isnum) {
         /* forbody -> DO block */
         BlockCnt bl = new BlockCnt();
         FuncState fs = this.fs;
@@ -1773,7 +1784,7 @@ public class LexState {
         fs.patchlist((isnum ? endfor : fs.jump()), prep + 1);
     }
 
-    void fornum(String varname, int line) {
+    private void fornum(String varname, int line) {
         /* fornum -> NAME = exp1,exp1[,exp1] forbody */
         FuncState fs = this.fs;
         int base = fs.freereg;
@@ -1798,7 +1809,7 @@ public class LexState {
         this.forbody(base, line, 1, true);
     }
 
-    void forlist(String indexname) {
+    private void forlist(String indexname) {
         /* forlist -> NAME {,NAME} IN explist1 forbody */
         FuncState fs = this.fs;
         expdesc e = new expdesc();
@@ -1822,7 +1833,7 @@ public class LexState {
         this.forbody(base, line, nvars - 3, false);
     }
 
-    void forstat(int line) {
+    private void forstat(int line) {
         /* forstat -> FOR (fornum | forlist) END */
         FuncState fs = this.fs;
         String varname;
@@ -1849,7 +1860,7 @@ public class LexState {
 
     }
 
-    int test_then_block() {
+    private int test_then_block() {
         /* test_then_block -> [IF | ELSEIF] cond THEN block */
         int condexit;
         this.next(); /* skip IF or ELSEIF */
@@ -1861,7 +1872,7 @@ public class LexState {
         return condexit;
     }
 
-    void ifstat(int line) {
+    private void ifstat(int line) {
         /* ifstat -> IF cond THEN block {ELSEIF cond THEN block} [ELSE block]
          * END */
         FuncState fs = this.fs;
@@ -1889,7 +1900,7 @@ public class LexState {
         this.check_match(TK_END, TK_IF, line);
     }
 
-    void localfunc() {
+    private void localfunc() {
         expdesc v = new expdesc();
         expdesc b = new expdesc();
         FuncState fs = this.fs;
@@ -1903,7 +1914,7 @@ public class LexState {
         /* debug information will only see the variable after this point! */
     }
 
-    void localstat() {
+    private void localstat() {
         /* stat -> LOCAL NAME {`,' NAME} [`=' explist1] */
         int nvars = 0;
         int nexps;
@@ -1921,7 +1932,7 @@ public class LexState {
         this.adjustlocalvars(nvars);
     }
 
-    boolean funcname(expdesc v) {
+    private boolean funcname(expdesc v) {
         /* funcname -> NAME {field} [`:' NAME] */
         boolean needself = false;
         this.singlevar(v);
@@ -1939,7 +1950,7 @@ public class LexState {
         return needself;
     }
 
-    void funcstat(int line) {
+    private void funcstat(int line) {
         /* funcstat -> FUNCTION funcname body */
         boolean needself;
         expdesc v = new expdesc();
@@ -1953,7 +1964,7 @@ public class LexState {
 
     }
 
-    void exprstat() {
+    private void exprstat() {
         /* stat -> func | assignment */
         FuncState fs = this.fs;
         LHS_assign v = new LHS_assign();
@@ -1968,7 +1979,7 @@ public class LexState {
         }
     }
 
-    void retstat() {
+    private void retstat() {
         /* stat -> RETURN explist */
         FuncState fs = this.fs;
         expdesc e = new expdesc();
@@ -2007,7 +2018,7 @@ public class LexState {
         fs.ret(first, nret);
     }
 
-    boolean statement() {
+    private boolean statement() {
         int line = this.linenumber; /* may be needed for error messages */
 
         switch (this.t.token) {
@@ -2077,7 +2088,7 @@ public class LexState {
         }
     }
 
-    void chunk() {
+    private void chunk() {
         /* chunk -> { stat [`;'] } */
         boolean islast = false;
         this.enterlevel();

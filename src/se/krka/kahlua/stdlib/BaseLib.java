@@ -207,7 +207,7 @@ public enum BaseLib implements JavaFunction {
                 @Override
                 public int call(LuaCallFrame callFrame, int nArguments) {
                     luaAssert(nArguments >= 1, "Not enough arguments");
-                    System.out.println("[LUA] " + (String) callFrame.get(0));
+                    System.out.println("[LUA] " + callFrame.get(0));
                     return 0;
                 }
             },
