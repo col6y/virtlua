@@ -96,6 +96,7 @@ class BaseLexer {
     private int current;  /* current character (charint) */
     private byte[] buff = new byte[32];  /* buffer for tokens */
     private int nbuff = 0; /* length of buffer */
+
     public BaseLexer(int firstByte, Reader z, String source) {
         this.z = z;
         this.source = source;
@@ -125,20 +126,12 @@ class BaseLexer {
         }
     }
 
-    private boolean isalnum(int c) {
-        return (c >= '0' && c <= '9')
-                || (c >= 'a' && c <= 'z')
-                || (c >= 'A' && c <= 'Z')
-                || (c == '_');
-    }
-
-    private boolean isalpha(int c) {
-        return (c >= 'a' && c <= 'z')
-                || (c >= 'A' && c <= 'Z');
+    private boolean isidentifierchar(int c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || current == '_' || isdigit(c);
     }
 
     private boolean isdigit(int c) {
-        return (c >= '0' && c <= '9');
+        return c >= '0' && c <= '9';
     }
 
     private void nextChar() {
@@ -405,7 +398,7 @@ class BaseLexer {
         if (check_next("Ee")) /* `E'? */ {
             check_next("+-"); /* optional exponent sign */
         }
-        while (isalnum(current) || current == '_') {
+        while (isidentifierchar(current)) {
             save_and_next();
         }
         save('\0');
@@ -532,12 +525,12 @@ class BaseLexer {
                     } else if (isdigit(current)) {
                         read_numeral(token);
                         return TK_NUMBER;
-                    } else if (isalpha(current) || current == '_') {
+                    } else if (isidentifierchar(current)) {
                         /* identifier or reserved word */
                         String ts;
                         do {
                             save_and_next();
-                        } while (isalnum(current) || current == '_');
+                        } while (isidentifierchar(current));
                         ts = newstring(buff, 0, nbuff);
                         if (RESERVED.containsKey(ts)) {
                             return RESERVED.get(ts);
@@ -570,9 +563,6 @@ class BaseLexer {
         lookahead.token = llex(lookahead);
     }
 
-    /*
-     * * prototypes for recursive non-terminal functions
-     */
     private void error_expected(int token) {
         syntaxerror(LUA_QS(token2str(token)) + " expected");
     }

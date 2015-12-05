@@ -372,7 +372,6 @@ public class LexState {
         FuncState.SETARG_C(i, luaO_int2fb(cc.nh));  /* set initial table size */
     }
 
-    /* }====================================================================== */
     private void parlist() {
         /* parlist -> [ param { `,' param } ] */
         FuncState fs = this.fs;
