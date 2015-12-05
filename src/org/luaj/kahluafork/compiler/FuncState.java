@@ -1435,13 +1435,13 @@ class FuncState {
         _assert(getOpMode(o) == iABC);
         _assert(getBMode(o) != OpArgN || b == 0);
         _assert(getCMode(o) != OpArgN || c == 0);
-        return this.code(CREATE_ABC(o, a, b, c), this.ls.baseLexer.lastline);
+        return this.code(CREATE_ABC(o, a, b, c), this.ls.baseLexer.getLastLine());
     }
 
     int codeABx(int o, int a, int bc) {
         _assert(getOpMode(o) == iABx || getOpMode(o) == iAsBx);
         _assert(getCMode(o) == OpArgN);
-        return this.code(CREATE_ABx(o, a, bc), this.ls.baseLexer.lastline);
+        return this.code(CREATE_ABx(o, a, bc), this.ls.baseLexer.getLastLine());
     }
 
     private void setlist(int base, int nelems, int tostore) {
@@ -1452,7 +1452,7 @@ class FuncState {
             this.codeABC(OP_SETLIST, base, b, c);
         } else {
             this.codeABC(OP_SETLIST, base, b, 0);
-            this.code(c, this.ls.baseLexer.lastline);
+            this.code(c, this.ls.baseLexer.getLastLine());
         }
         this.freereg = base + 1; /* free registers with list values */
 

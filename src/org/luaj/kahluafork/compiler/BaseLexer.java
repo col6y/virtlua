@@ -34,12 +34,12 @@ class BaseLexer {
     private static final int EOZ = (-1);
     private static final int MAXSRC = 80;
 
-    Token t = null;  /* current token */
-    Token lookahead;  /* look ahead token */
+    private Token t = null;  /* current token */
+    private Token lookahead;  /* look ahead token */
     private final Reader z;  /* input stream */
     private final String source;  /* current source name */
-    int lastline = 1;  /* line of last token `consumed' */
-    int linenumber = 1;  /* input line counter */
+    private int lastline = 1;  /* line of last token `consumed' */
+    private int linenumber = 1;  /* input line counter */
     private int current;  /* current character (charint) */
     private final StringBuilder buff = new StringBuilder();
 
@@ -438,7 +438,7 @@ class BaseLexer {
         }
     }
 
-    void lookahead() {
+    private void lookahead() {
         FuncState._assert(lookahead.is(Token.TK_EOS));
         lookahead = llex();
     }
@@ -447,8 +447,12 @@ class BaseLexer {
         syntaxerror("'" + Token.toString(token) + "' expected");
     }
 
+    boolean test(int c) {
+        return t.is(c);
+    }
+
     boolean testnext(int c) {
-        if (t.is(c)) {
+        if (test(c)) {
             next();
             return true;
         } else {
@@ -488,9 +492,42 @@ class BaseLexer {
         return t.getString();
     }
 
+    String str_checkstring() {
+        check(Token.TK_STRING);
+        return t.getString();
+    }
+
+    public double checknumber() {
+        check(Token.TK_NUMBER);
+        return t.getNumber();
+    }
+
     String str_checkname_next() {
         String name = str_checkname();
         next();
         return name;
+    }
+
+    public int switchToken() {
+        return t.getToken();
+    }
+
+    public boolean isLookahead(char c) {
+        if (lookahead.is(Token.TK_EOS)) {
+            lookahead();
+        }
+        return lookahead.is(c);
+    }
+
+    public int getLine() {
+        return linenumber;
+    }
+
+    public int getLastLine() {
+        return lastline;
+    }
+
+    public Token getToken() {
+        return t;
     }
 }
