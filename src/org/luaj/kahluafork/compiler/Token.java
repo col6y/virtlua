@@ -216,4 +216,17 @@ public class Token {
                 return LexState.OPR_NOBINOPR;
         }
     }
+
+    boolean isBlockTerminator() {
+        switch (token) {
+            case TK_ELSE:
+            case TK_ELSEIF:
+            case TK_END:
+            case TK_UNTIL:
+            case TK_EOS:
+                return true;
+            default:
+                return false;
+        }
+    }
 }

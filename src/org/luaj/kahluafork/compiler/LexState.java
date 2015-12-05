@@ -113,6 +113,75 @@ public class LexState {
         return funcstate.f;
     }
 
+    private void compile() {
+        chunk();
+        baseLexer.check(Token.TK_EOS);
+        close_func();
+        FuncState._assert(fs == null);
+    }
+
+    private void chunk() {
+        /* chunk -> { stat [`;'] } */
+        while (!baseLexer.getToken().isBlockTerminator()) {
+            boolean islast = this.statement();
+            baseLexer.testnext(';');
+            FuncState._assert(this.fs.f.maxStacksize >= this.fs.freereg && this.fs.freereg >= this.fs.nactvar);
+            this.fs.freereg = this.fs.nactvar; /* free registers */
+            if (islast) {
+                break;
+            }
+        }
+    }
+
+    private boolean statement() {
+        int line = this.baseLexer.getLine(); /* may be needed for error messages */
+        switch (this.baseLexer.switchToken()) {
+            case Token.TK_IF: /* stat -> ifstat */
+                this.ifstat(line);
+                return false;
+            case Token.TK_WHILE: /* stat -> whilestat */
+                this.whilestat(line, baseLexer.getLastLine());
+                return false;
+            case Token.TK_DO: /* stat -> DO block END */
+                baseLexer.next(); /* skip DO */
+                this.block();
+                baseLexer.check_match(Token.TK_END, Token.TK_DO, line);
+                return false;
+            case Token.TK_FOR: /* stat -> forstat */
+                this.forstat(line);
+                return false;
+            case Token.TK_REPEAT: /* stat -> repeatstat */
+                this.repeatstat(line, baseLexer.getLastLine());
+                return false;
+            case Token.TK_FUNCTION:
+                this.funcstat(line); /* stat -> funcstat */
+                return false;
+            case Token.TK_LOCAL: /* stat -> localstat */
+                baseLexer.next(); /* skip LOCAL */
+                if (baseLexer.testnext(Token.TK_FUNCTION)) /* local function? */ {
+                    this.localfunc();
+                } else {
+                    this.localstat();
+                }
+                return false;
+            case Token.TK_RETURN: /* stat -> retstat */
+                this.retstat();
+                return true; /* must be last statement */
+            case Token.TK_BREAK: /* stat -> breakstat */
+                baseLexer.next(); /* skip BREAK */
+                this.breakstat(baseLexer.getLastLine());
+                return true; /* must be last statement */
+            default:
+                this.exprstat();
+                return false; /* to avoid warnings */
+        }
+    }
+
+
+    void syntaxerror(String msg) {
+        baseLexer.syntaxerror(msg);
+    }
+
     /*
      ** converts an integer to a "floating point byte", represented as
      ** (eeeeexxx), where the real value is (1xxx) * 2^(eeeee - 1) if
@@ -134,17 +203,6 @@ public class LexState {
 
     private static boolean hasmultret(int k) {
         return ((k) == VCALL || (k) == VVARARG);
-    }
-
-    private void compile() {
-        chunk();
-        baseLexer.check(Token.TK_EOS);
-        close_func();
-        FuncState._assert(fs == null);
-    }
-
-    void syntaxerror(String msg) {
-        baseLexer.syntaxerror(msg);
     }
 
     private void checkname(expdesc e) {
@@ -602,19 +660,6 @@ public class LexState {
         this.subexpr(v, 0);
     }
 
-    private boolean block_follow(Token token) {
-        switch (token.getToken()) {
-            case Token.TK_ELSE:
-            case Token.TK_ELSEIF:
-            case Token.TK_END:
-            case Token.TK_UNTIL:
-            case Token.TK_EOS:
-                return true;
-            default:
-                return false;
-        }
-    }
-
     private void block() {
         /* block -> chunk */
         FuncState fs = this.fs;
@@ -994,7 +1039,7 @@ public class LexState {
 
         baseLexer.next(); /* skip RETURN */
 
-        if (block_follow(this.baseLexer.getToken()) || this.baseLexer.test(';')) {
+        if (this.baseLexer.getToken().isBlockTerminator() || this.baseLexer.test(';')) {
             first = nret = 0; /* return no values */
         } else {
             nret = this.explist1(e); /* optional return values */
@@ -1020,76 +1065,6 @@ public class LexState {
             }
         }
         fs.ret(first, nret, baseLexer.getLastLine());
-    }
-
-    private boolean statement() {
-        int line = this.baseLexer.getLine(); /* may be needed for error messages */
-        switch (this.baseLexer.switchToken()) {
-            case Token.TK_IF: { /* stat -> ifstat */
-                this.ifstat(line);
-                return false;
-            }
-            case Token.TK_WHILE: { /* stat -> whilestat */
-                this.whilestat(line, baseLexer.getLastLine());
-                return false;
-            }
-            case Token.TK_DO: { /* stat -> DO block END */
-                baseLexer.next(); /* skip DO */
-
-                this.block();
-                baseLexer.check_match(Token.TK_END, Token.TK_DO, line);
-                return false;
-            }
-            case Token.TK_FOR: { /* stat -> forstat */
-                this.forstat(line);
-                return false;
-            }
-            case Token.TK_REPEAT: { /* stat -> repeatstat */
-                this.repeatstat(line, baseLexer.getLastLine());
-                return false;
-            }
-            case Token.TK_FUNCTION: {
-                this.funcstat(line); /* stat -> funcstat */
-
-                return false;
-            }
-            case Token.TK_LOCAL: { /* stat -> localstat */
-                baseLexer.next(); /* skip LOCAL */
-
-                if (baseLexer.testnext(Token.TK_FUNCTION)) /* local function? */ {
-                    this.localfunc();
-                } else {
-                    this.localstat();
-                }
-                return false;
-            }
-            case Token.TK_RETURN: { /* stat -> retstat */
-                this.retstat();
-                return true; /* must be last statement */
-            }
-            case Token.TK_BREAK: { /* stat -> breakstat */
-                baseLexer.next(); /* skip BREAK */
-
-                this.breakstat(baseLexer.getLastLine());
-                return true; /* must be last statement */
-            }
-            default: {
-                this.exprstat();
-                return false; /* to avoid warnings */
-            }
-        }
-    }
-
-    private void chunk() {
-        /* chunk -> { stat [`;'] } */
-        boolean islast = false;
-        while (!islast && !block_follow(this.baseLexer.getToken())) {
-            islast = this.statement();
-            baseLexer.testnext(';');
-            FuncState._assert(this.fs.f.maxStacksize >= this.fs.freereg
-                    && this.fs.freereg >= this.fs.nactvar);
-            this.fs.freereg = this.fs.nactvar; /* free registers */
-        }
     }
 
     static class expdesc {
