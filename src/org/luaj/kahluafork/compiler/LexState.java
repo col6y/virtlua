@@ -142,7 +142,7 @@ public class LexState {
 
     private void compile() {
         chunk();
-        baseLexer.check(BaseLexer.TK_EOS);
+        baseLexer.check(Token.TK_EOS);
         close_func();
         FuncState._assert(fs == null);
     }
@@ -299,7 +299,7 @@ public class LexState {
         expdesc key = new expdesc();
         expdesc val = new expdesc();
         int rkkey;
-        if (this.baseLexer.t.is(BaseLexer.TK_NAME)) {
+        if (this.baseLexer.t.is(Token.TK_NAME)) {
             fs.checklimit(cc.nh, BaseLexer.MAX_INT, "items in a constructor");
             checkname(key);
         } else /* this.t.token == '[' */ {
@@ -341,7 +341,7 @@ public class LexState {
             }
             fs.closelistfield(cc);
             switch (this.baseLexer.t.getToken()) {
-                case BaseLexer.TK_NAME: { /* may be listfields or recfields */
+                case Token.TK_NAME: { /* may be listfields or recfields */
                     baseLexer.lookahead();
                     if (this.baseLexer.lookahead.is('=')) {
                         this.recfield(cc);
@@ -376,11 +376,11 @@ public class LexState {
         if (!this.baseLexer.t.is(')')) {  /* is `parlist' not empty? */
             do {
                 switch (this.baseLexer.t.getToken()) {
-                    case BaseLexer.TK_NAME: {  /* param . NAME */
+                    case Token.TK_NAME: {  /* param . NAME */
                         this.new_localvar(baseLexer.str_checkname_next(), nparams++);
                         break;
                     }
-                    case BaseLexer.TK_DOTS: {  /* param . `...' */
+                    case Token.TK_DOTS: {  /* param . `...' */
                         baseLexer.next();
                         fs.isVararg |= FuncState.VARARG_ISVARARG;
                         break;
@@ -408,7 +408,7 @@ public class LexState {
         this.parlist();
         baseLexer.checknext(')');
         this.chunk();
-        baseLexer.check_match(BaseLexer.TK_END, BaseLexer.TK_FUNCTION, line);
+        baseLexer.check_match(Token.TK_END, Token.TK_FUNCTION, line);
         this.close_func();
         this.pushclosure(new_fs, e);
     }
@@ -449,7 +449,7 @@ public class LexState {
                 this.constructor(args);
                 break;
             }
-            case BaseLexer.TK_STRING: { /* funcargs -> STRING */
+            case Token.TK_STRING: { /* funcargs -> STRING */
                 this.codestring(args, this.baseLexer.t.getString());
                 baseLexer.next(); /* must use `seminfo' before `next' */
                 break;
@@ -493,7 +493,7 @@ public class LexState {
                 fs.dischargevars(v);
                 break;
             }
-            case BaseLexer.TK_NAME: {
+            case Token.TK_NAME: {
                 this.singlevar(v);
                 break;
             }
@@ -533,7 +533,7 @@ public class LexState {
                     break;
                 }
                 case '(':
-                case BaseLexer.TK_STRING:
+                case Token.TK_STRING:
                 case '{': { /* funcargs */
                     fs.exp2nextreg(v);
                     this.funcargs(v);
@@ -551,28 +551,28 @@ public class LexState {
          * FUNCTION body | primaryexp
          */
         switch (this.baseLexer.t.getToken()) {
-            case BaseLexer.TK_NUMBER: {
+            case Token.TK_NUMBER: {
                 v.init(VKNUM, 0);
                 v.setNval(this.baseLexer.t.getNumber());
                 break;
             }
-            case BaseLexer.TK_STRING: {
+            case Token.TK_STRING: {
                 this.codestring(v, this.baseLexer.t.getString());
                 break;
             }
-            case BaseLexer.TK_NIL: {
+            case Token.TK_NIL: {
                 v.init(VNIL, 0);
                 break;
             }
-            case BaseLexer.TK_TRUE: {
+            case Token.TK_TRUE: {
                 v.init(VTRUE, 0);
                 break;
             }
-            case BaseLexer.TK_FALSE: {
+            case Token.TK_FALSE: {
                 v.init(VFALSE, 0);
                 break;
             }
-            case BaseLexer.TK_DOTS: { /* vararg */
+            case Token.TK_DOTS: { /* vararg */
                 FuncState fs = this.fs;
                 baseLexer.check_condition(fs.isVararg != 0, "cannot use '...' outside a vararg function");
                 fs.isVararg &= ~FuncState.VARARG_NEEDSARG; /* don't need 'arg' */
@@ -584,7 +584,7 @@ public class LexState {
                 this.constructor(v);
                 return;
             }
-            case BaseLexer.TK_FUNCTION: {
+            case Token.TK_FUNCTION: {
                 baseLexer.next();
                 this.body(v, false, this.baseLexer.linenumber, null);
                 return;
@@ -599,7 +599,7 @@ public class LexState {
 
     private int getunopr(int op) {
         switch (op) {
-            case BaseLexer.TK_NOT:
+            case Token.TK_NOT:
                 return OPR_NOT;
             case '-':
                 return OPR_MINUS;
@@ -624,23 +624,23 @@ public class LexState {
                 return OPR_MOD;
             case '^':
                 return OPR_POW;
-            case BaseLexer.TK_CONCAT:
+            case Token.TK_CONCAT:
                 return OPR_CONCAT;
-            case BaseLexer.TK_NE:
+            case Token.TK_NE:
                 return OPR_NE;
-            case BaseLexer.TK_EQ:
+            case Token.TK_EQ:
                 return OPR_EQ;
             case '<':
                 return OPR_LT;
-            case BaseLexer.TK_LE:
+            case Token.TK_LE:
                 return OPR_LE;
             case '>':
                 return OPR_GT;
-            case BaseLexer.TK_GE:
+            case Token.TK_GE:
                 return OPR_GE;
-            case BaseLexer.TK_AND:
+            case Token.TK_AND:
                 return OPR_AND;
-            case BaseLexer.TK_OR:
+            case Token.TK_OR:
                 return OPR_OR;
             default:
                 return OPR_NOBINOPR;
@@ -691,11 +691,11 @@ public class LexState {
      */
     private boolean block_follow(int token) {
         switch (token) {
-            case BaseLexer.TK_ELSE:
-            case BaseLexer.TK_ELSEIF:
-            case BaseLexer.TK_END:
-            case BaseLexer.TK_UNTIL:
-            case BaseLexer.TK_EOS:
+            case Token.TK_ELSE:
+            case Token.TK_ELSEIF:
+            case Token.TK_END:
+            case Token.TK_UNTIL:
+            case Token.TK_EOS:
                 return true;
             default:
                 return false;
@@ -815,10 +815,10 @@ public class LexState {
         whileinit = fs.getlabel();
         condexit = this.cond();
         fs.enterblock(bl, true);
-        baseLexer.checknext(BaseLexer.TK_DO);
+        baseLexer.checknext(Token.TK_DO);
         this.block();
         fs.patchlist(fs.jump(), whileinit);
-        baseLexer.check_match(BaseLexer.TK_END, BaseLexer.TK_WHILE, line);
+        baseLexer.check_match(Token.TK_END, Token.TK_WHILE, line);
         fs.leaveblock();
         fs.patchtohere(condexit);  /* false conditions finish the loop */
     }
@@ -837,7 +837,7 @@ public class LexState {
         baseLexer.next(); /* skip REPEAT */
 
         this.chunk();
-        baseLexer.check_match(BaseLexer.TK_UNTIL, BaseLexer.TK_REPEAT, line);
+        baseLexer.check_match(Token.TK_UNTIL, Token.TK_REPEAT, line);
         condexit = this.cond(); /* read condition (inside scope block) */
 
         if (!bl2.upval) { /* no upvalues? */
@@ -869,7 +869,7 @@ public class LexState {
         int prep, endfor;
         this.adjustlocalvars(3); /* control variables */
 
-        baseLexer.checknext(BaseLexer.TK_DO);
+        baseLexer.checknext(Token.TK_DO);
         prep = isnum ? fs.codeAsBx(FuncState.OP_FORPREP, base, NO_JUMP) : fs.jump();
         fs.enterblock(bl, false); /* scope for declared variables */
 
@@ -925,7 +925,7 @@ public class LexState {
         while (baseLexer.testnext(',')) {
             this.new_localvar(baseLexer.str_checkname_next(), nvars++);
         }
-        baseLexer.checknext(BaseLexer.TK_IN);
+        baseLexer.checknext(Token.TK_IN);
         line = this.baseLexer.linenumber;
         this.adjust_assign(3, this.explist1(e), e);
         fs.checkstack(3); /* extra space to call generator */
@@ -949,13 +949,13 @@ public class LexState {
                 this.fornum(varname, line);
                 break;
             case ',':
-            case BaseLexer.TK_IN:
+            case Token.TK_IN:
                 this.forlist(varname);
                 break;
             default:
                 baseLexer.syntaxerror("'=' or 'in' expected");
         }
-        baseLexer.check_match(BaseLexer.TK_END, BaseLexer.TK_FOR, line);
+        baseLexer.check_match(Token.TK_END, Token.TK_FOR, line);
         fs.leaveblock(); /* loop scope (`break' jumps to this point) */
     }
 
@@ -965,7 +965,7 @@ public class LexState {
         baseLexer.next(); /* skip IF or ELSEIF */
 
         condexit = this.cond();
-        baseLexer.checknext(BaseLexer.TK_THEN);
+        baseLexer.checknext(Token.TK_THEN);
         this.block(); /* `then' part */
 
         return condexit;
@@ -978,12 +978,12 @@ public class LexState {
         int escapelist = NO_JUMP;
         flist = test_then_block(); /* IF cond THEN block */
 
-        while (this.baseLexer.t.is(BaseLexer.TK_ELSEIF)) {
+        while (this.baseLexer.t.is(Token.TK_ELSEIF)) {
             escapelist = fs.concat(escapelist, fs.jump());
             fs.patchtohere(flist);
             flist = test_then_block(); /* ELSEIF cond THEN block */
         }
-        if (this.baseLexer.t.is(BaseLexer.TK_ELSE)) {
+        if (this.baseLexer.t.is(Token.TK_ELSE)) {
             escapelist = fs.concat(escapelist, fs.jump());
             fs.patchtohere(flist);
             baseLexer.next(); /* skip ELSE (after patch, for correct line info) */
@@ -993,7 +993,7 @@ public class LexState {
             escapelist = fs.concat(escapelist, flist);
         }
         fs.patchtohere(escapelist);
-        baseLexer.check_match(BaseLexer.TK_END, BaseLexer.TK_IF, line);
+        baseLexer.check_match(Token.TK_END, Token.TK_IF, line);
     }
 
     private void localfunc() {
@@ -1111,49 +1111,49 @@ public class LexState {
     private boolean statement() {
         int line = this.baseLexer.linenumber; /* may be needed for error messages */
         switch (this.baseLexer.t.getToken()) {
-            case BaseLexer.TK_IF: { /* stat -> ifstat */
+            case Token.TK_IF: { /* stat -> ifstat */
                 this.ifstat(line);
                 return false;
             }
-            case BaseLexer.TK_WHILE: { /* stat -> whilestat */
+            case Token.TK_WHILE: { /* stat -> whilestat */
                 this.whilestat(line);
                 return false;
             }
-            case BaseLexer.TK_DO: { /* stat -> DO block END */
+            case Token.TK_DO: { /* stat -> DO block END */
                 baseLexer.next(); /* skip DO */
 
                 this.block();
-                baseLexer.check_match(BaseLexer.TK_END, BaseLexer.TK_DO, line);
+                baseLexer.check_match(Token.TK_END, Token.TK_DO, line);
                 return false;
             }
-            case BaseLexer.TK_FOR: { /* stat -> forstat */
+            case Token.TK_FOR: { /* stat -> forstat */
                 this.forstat(line);
                 return false;
             }
-            case BaseLexer.TK_REPEAT: { /* stat -> repeatstat */
+            case Token.TK_REPEAT: { /* stat -> repeatstat */
                 this.repeatstat(line);
                 return false;
             }
-            case BaseLexer.TK_FUNCTION: {
+            case Token.TK_FUNCTION: {
                 this.funcstat(line); /* stat -> funcstat */
 
                 return false;
             }
-            case BaseLexer.TK_LOCAL: { /* stat -> localstat */
+            case Token.TK_LOCAL: { /* stat -> localstat */
                 baseLexer.next(); /* skip LOCAL */
 
-                if (baseLexer.testnext(BaseLexer.TK_FUNCTION)) /* local function? */ {
+                if (baseLexer.testnext(Token.TK_FUNCTION)) /* local function? */ {
                     this.localfunc();
                 } else {
                     this.localstat();
                 }
                 return false;
             }
-            case BaseLexer.TK_RETURN: { /* stat -> retstat */
+            case Token.TK_RETURN: { /* stat -> retstat */
                 this.retstat();
                 return true; /* must be last statement */
             }
-            case BaseLexer.TK_BREAK: { /* stat -> breakstat */
+            case Token.TK_BREAK: { /* stat -> breakstat */
                 baseLexer.next(); /* skip BREAK */
 
                 this.breakstat();

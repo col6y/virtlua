@@ -32,58 +32,8 @@ import java.util.HashMap;
 
 class BaseLexer {
     static final int MAX_INT = Integer.MAX_VALUE - 2;
-    /* terminal symbols denoted by reserved words */
-    final static int TK_AND = 257;
-    final static int TK_BREAK = 258;
-    final static int TK_DO = 259;
-    final static int TK_ELSE = 260;
-    final static int TK_ELSEIF = 261;
-    final static int TK_END = 262;
-    final static int TK_FALSE = 263;
-    final static int TK_FOR = 264;
-    final static int TK_FUNCTION = 265;
-    final static int TK_IF = 266;
-    final static int TK_IN = 267;
-    final static int TK_LOCAL = 268;
-    final static int TK_NIL = 269;
-    final static int TK_NOT = 270;
-    final static int TK_OR = 271;
-    final static int TK_REPEAT = 272;
-    final static int TK_RETURN = 273;
-    final static int TK_THEN = 274;
-    final static int TK_TRUE = 275;
-    final static int TK_UNTIL = 276;
-    final static int TK_WHILE = 277;
-    final static int TK_CONCAT = 278;
-    final static int TK_DOTS = 279;
-    final static int TK_EQ = 280;
-    final static int TK_GE = 281;
-    final static int TK_LE = 282;
-    final static int TK_NE = 283;
-    final static int TK_NUMBER = 284;
-    final static int TK_NAME = 285;
-    final static int TK_STRING = 286;
-    final static int TK_EOS = 287;
     private static final int EOZ = (-1);
-    private static final int UCHAR_MAX = 255; // TODO, convert to unicode CHAR_MAX?
     private static final int MAXSRC = 80;
-    private final static int FIRST_RESERVED = TK_AND;
-    private final static int NUM_RESERVED = TK_WHILE + 1 - FIRST_RESERVED;
-    /* ORDER RESERVED */
-    private final static String[] luaX_tokens = {
-            "and", "break", "do", "else", "elseif",
-            "end", "false", "for", "function", "if",
-            "in", "local", "nil", "not", "or", "repeat",
-            "return", "then", "true", "until", "while",
-            "..", "...", "==", ">=", "<=", "~=",
-            "<number>", "<name>", "<string>", "<eof>"};
-    private final static HashMap<String, Integer> RESERVED = new HashMap<>();
-
-    static {
-        for (int i = 0; i < NUM_RESERVED; i++) {
-            RESERVED.put(luaX_tokens[i], FIRST_RESERVED + i);
-        }
-    }
 
     Token t = null;  /* current token */
     Token lookahead;  /* look ahead token */
@@ -98,14 +48,10 @@ class BaseLexer {
     public BaseLexer(int firstByte, Reader z, String source) {
         this.z = z;
         this.source = source;
-        this.lookahead = Token.tok(TK_EOS); /* no look-ahead token */
+        this.lookahead = Token.tok(Token.TK_EOS); /* no look-ahead token */
         this.current = firstByte; /* read first char */
         skipShebang();
         next();
-    }
-
-    private static boolean iscntrl(int token) {
-        return token < ' ';
     }
 
     private void skipShebang() {
@@ -128,9 +74,7 @@ class BaseLexer {
         try {
             current = z.read();
         } catch (IOException e) {
-            // TODO: handle exceptions correctly
-            e.printStackTrace();
-            current = EOZ;
+            throw new RuntimeException(e);
         }
     }
 
@@ -147,26 +91,8 @@ class BaseLexer {
         buff.append((char) c);
     }
 
-    private String token2str(int token) {
-        // TODO: make into a toString()
-        if (token < FIRST_RESERVED) {
-            return iscntrl(token)
-                    ? "char(" + token + ")"
-                    : String.valueOf((char) token);
-        } else {
-            return luaX_tokens[token - FIRST_RESERVED];
-        }
-    }
-
     private String txtToken(Token token) {
-        switch (token.getToken()) {
-            case TK_NAME:
-            case TK_STRING:
-            case TK_NUMBER:
-                return buff.toString();
-            default:
-                return token2str(token.getToken());
-        }
+        return token.toString();
     }
 
     private String chunkid(String source) {
@@ -187,11 +113,11 @@ class BaseLexer {
         return source + end;
     }
 
-    void lexerror(String msg, Token token) {
+    private void lexerror(String msg, Token token) {
         String cid = chunkid(source); // TODO: get source name from source
         String errorMessage;
         if (token != null) {
-            errorMessage = cid + ":" + linenumber + ": " + msg + " near `" + txtToken(token) + "`";
+            errorMessage = cid + ":" + linenumber + ": " + msg + " near '" + txtToken(token) + "'";
         } else {
             errorMessage = cid + ":" + linenumber + ": " + msg;
         }
@@ -236,7 +162,7 @@ class BaseLexer {
         for (boolean endloop = false; !endloop; ) {
             switch (current) {
                 case EOZ:
-                    lexerror(is_comment ? "unfinished long comment" : "unfinished long string", Token.tok(TK_EOS));
+                    lexerror(is_comment ? "unfinished long comment" : "unfinished long string", Token.tok(Token.TK_EOS));
                     break; /* to avoid warnings */
                 case '[': {
                     if (skip_sep() == sep) {
@@ -275,15 +201,11 @@ class BaseLexer {
         return is_comment ? null : newstring(2 + sep, buff.length() - 2 * (2 + sep));
     }
 
-    String newstring(String s) {
-        return newTString(s);
-    }
-
     private String newstring(int offset, int len) {
-        return newTString(buff.substring(offset, offset + len));
+        return newstring(buff.substring(offset, offset + len));
     }
 
-    private String newTString(String s) {
+    String newstring(String s) {
         String t = strings.get(s);
         if (t == null) {
             t = s;
@@ -297,11 +219,11 @@ class BaseLexer {
         while (current != del) {
             switch (current) {
                 case EOZ:
-                    lexerror("unfinished string", Token.tok(TK_EOS));
+                    lexerror("unfinished string", Token.tok(Token.TK_EOS));
                     continue; /* to avoid warnings */
                 case '\n':
                 case '\r':
-                    lexerror("unfinished string", Token.tok(TK_STRING));
+                    lexerror("unfinished string", Token.string(buff.toString()));
                     continue; /* to avoid warnings */
                 case '\\': {
                     int c;
@@ -339,14 +261,15 @@ class BaseLexer {
                             if (!isdigit(current)) {
                                 save_and_next(); /* handles \\, \", \', and \? */
                             } else { /* \xxx */
-                                int i = 0;
-                                c = 0;
-                                do {
+                                c = current - '0';
+                                nextChar();
+                                if (isdigit(current)) {
                                     c = 10 * c + (current - '0');
                                     nextChar();
-                                } while (++i < 3 && isdigit(current));
-                                if (c > UCHAR_MAX) {
-                                    lexerror("escape sequence too large", Token.tok(TK_STRING));
+                                    if (isdigit(current)) {
+                                        c = 10 * c + (current - '0');
+                                        nextChar();
+                                    }
                                 }
                                 save(c);
                             }
@@ -436,7 +359,7 @@ class BaseLexer {
                     } else if (sep == -1) {
                         return Token.tok('[');
                     } else {
-                        lexerror("invalid long string delimiter", Token.tok(TK_STRING));
+                        lexerror("invalid long string delimiter", Token.string(buff.toString()));
                     }
                 }
                 case '=': {
@@ -445,7 +368,7 @@ class BaseLexer {
                         return Token.tok('=');
                     } else {
                         nextChar();
-                        return Token.tok(TK_EQ);
+                        return Token.tok(Token.TK_EQ);
                     }
                 }
                 case '<': {
@@ -454,7 +377,7 @@ class BaseLexer {
                         return Token.tok('<');
                     } else {
                         nextChar();
-                        return Token.tok(TK_LE);
+                        return Token.tok(Token.TK_LE);
                     }
                 }
                 case '>': {
@@ -463,7 +386,7 @@ class BaseLexer {
                         return Token.tok('>');
                     } else {
                         nextChar();
-                        return Token.tok(TK_GE);
+                        return Token.tok(Token.TK_GE);
                     }
                 }
                 case '~': {
@@ -472,7 +395,7 @@ class BaseLexer {
                         return Token.tok('~');
                     } else {
                         nextChar();
-                        return Token.tok(TK_NE);
+                        return Token.tok(Token.TK_NE);
                     }
                 }
                 case '"':
@@ -483,9 +406,9 @@ class BaseLexer {
                     save_and_next();
                     if (check_next(".")) {
                         if (check_next(".")) {
-                            return Token.tok(TK_DOTS); /* ... */
+                            return Token.tok(Token.TK_DOTS); /* ... */
                         } else {
-                            return Token.tok(TK_CONCAT); /* .. */
+                            return Token.tok(Token.TK_CONCAT); /* .. */
                         }
                     } else if (!isdigit(current)) {
                         return Token.tok('.');
@@ -494,7 +417,7 @@ class BaseLexer {
                     }
                 }
                 case EOZ: {
-                    return Token.tok(TK_EOS);
+                    return Token.tok(Token.TK_EOS);
                 }
                 default: {
                     if (current <= ' ') {
@@ -508,12 +431,8 @@ class BaseLexer {
                         do {
                             save_and_next();
                         } while (isidentifierchar(current));
-                        ts = buff.toString();
-                        if (RESERVED.containsKey(ts)) {
-                            return Token.tok(RESERVED.get(ts));
-                        } else {
-                            return Token.name(newTString(ts));
-                        }
+                        ts = newstring(buff.toString());
+                        return Token.nameOrKeyword(ts);
                     } else {
                         int c = current;
                         nextChar();
@@ -526,21 +445,21 @@ class BaseLexer {
 
     void next() {
         lastline = linenumber;
-        if (!lookahead.is(TK_EOS)) { /* is there a look-ahead token? */
+        if (!lookahead.is(Token.TK_EOS)) { /* is there a look-ahead token? */
             t = lookahead;
-            lookahead = Token.tok(TK_EOS); /* and discharge it */
+            lookahead = Token.tok(Token.TK_EOS); /* and discharge it */
         } else {
             t = llex(); /* read next token */
         }
     }
 
     void lookahead() {
-        FuncState._assert(lookahead.is(TK_EOS));
+        FuncState._assert(lookahead.is(Token.TK_EOS));
         lookahead = llex();
     }
 
     private void error_expected(int token) {
-        syntaxerror("'" + token2str(token) + "' expected");
+        syntaxerror("'" + Token.toString(token) + "' expected");
     }
 
     boolean testnext(int c) {
@@ -574,13 +493,13 @@ class BaseLexer {
             if (where == linenumber) {
                 error_expected(what);
             } else {
-                syntaxerror("'" + token2str(what) + "' expected " + "(to close '" + token2str(who) + "' at line " + where + ")");
+                syntaxerror("'" + Token.toString(what) + "' expected " + "(to close '" + Token.toString(who) + "' at line " + where + ")");
             }
         }
     }
 
     String str_checkname() {
-        check(TK_NAME);
+        check(Token.TK_NAME);
         return t.getString();
     }
 
