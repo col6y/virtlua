@@ -421,7 +421,7 @@ class FuncState {
         String msg = (linedefined == 0)
                 ? "main function has more than " + limit + " " + what
                 : "function at line " + linedefined + " has more than " + limit + " " + what;
-        ls.lexerrorNotoken(msg);
+        ls.syntaxerror(msg);
     }
 
     private int indexupvalue(String name, expdesc v) {

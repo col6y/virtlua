@@ -147,16 +147,12 @@ public class LexState {
         FuncState._assert(fs == null);
     }
 
-    void lexerrorNotoken(String msg) {
-        baseLexer.lexerror(msg, 0);
-    }
-
     void syntaxerror(String msg) {
         baseLexer.syntaxerror(msg);
     }
 
     private void checkname(expdesc e) {
-        codestring(e, baseLexer.str_checkname());
+        codestring(e, baseLexer.str_checkname_next());
     }
 
     private void codestring(expdesc e, String s) {
@@ -194,7 +190,7 @@ public class LexState {
     }
 
     private void singlevar(expdesc var) {
-        String varname = baseLexer.str_checkname();
+        String varname = baseLexer.str_checkname_next();
         var.lastname = varname;
         FuncState fs = this.fs;
         if (fs.singlevaraux(varname, var, 1) == VGLOBAL) {
@@ -231,7 +227,7 @@ public class LexState {
 
     private void enterlevel() {
         if (++nCcalls > LUAI_MAXCCALLS) {
-            baseLexer.lexerror("chunk has too many syntax levels", 0);
+            syntaxerror("chunk has too many syntax levels");
         }
     }
 
@@ -282,8 +278,7 @@ public class LexState {
         fs.exp2anyreg(v);
         baseLexer.next(); /* skip the dot or colon */
 
-        baseLexer.check(BaseLexer.TK_NAME);
-        v.lastname = baseLexer.t.ts;
+        v.lastname = baseLexer.str_checkname();
         checkname(key);
         fs.indexed(v, key);
     }
@@ -304,7 +299,7 @@ public class LexState {
         expdesc key = new expdesc();
         expdesc val = new expdesc();
         int rkkey;
-        if (this.baseLexer.t.token == BaseLexer.TK_NAME) {
+        if (this.baseLexer.t.is(BaseLexer.TK_NAME)) {
             fs.checklimit(cc.nh, BaseLexer.MAX_INT, "items in a constructor");
             checkname(key);
         } else /* this.t.token == '[' */ {
@@ -341,17 +336,17 @@ public class LexState {
         baseLexer.checknext('{');
         do {
             FuncState._assert(cc.v.k == VVOID || cc.tostore > 0);
-            if (this.baseLexer.t.token == '}') {
+            if (this.baseLexer.t.is('}')) {
                 break;
             }
             fs.closelistfield(cc);
-            switch (this.baseLexer.t.token) {
+            switch (this.baseLexer.t.getToken()) {
                 case BaseLexer.TK_NAME: { /* may be listfields or recfields */
                     baseLexer.lookahead();
-                    if (this.baseLexer.lookahead.token != '=') /* expression? */ {
-                        this.listfield(cc);
-                    } else {
+                    if (this.baseLexer.lookahead.is('=')) {
                         this.recfield(cc);
+                    } else {
+                        this.listfield(cc);
                     }
                     break;
                 }
@@ -378,11 +373,11 @@ public class LexState {
         LuaPrototype f = fs.f;
         int nparams = 0;
         fs.isVararg = 0;
-        if (this.baseLexer.t.token != ')') {  /* is `parlist' not empty? */
+        if (!this.baseLexer.t.is(')')) {  /* is `parlist' not empty? */
             do {
-                switch (this.baseLexer.t.token) {
+                switch (this.baseLexer.t.getToken()) {
                     case BaseLexer.TK_NAME: {  /* param . NAME */
-                        this.new_localvar(baseLexer.str_checkname(), nparams++);
+                        this.new_localvar(baseLexer.str_checkname_next(), nparams++);
                         break;
                     }
                     case BaseLexer.TK_DOTS: {  /* param . `...' */
@@ -435,13 +430,13 @@ public class LexState {
         expdesc args = new expdesc();
         int base, nparams;
         int line = this.baseLexer.linenumber;
-        switch (this.baseLexer.t.token) {
+        switch (this.baseLexer.t.getToken()) {
             case '(': { /* funcargs -> `(' [ explist1 ] `)' */
                 if (line != this.baseLexer.lastline) {
                     baseLexer.syntaxerror("ambiguous syntax (function call x new statement)");
                 }
                 baseLexer.next();
-                if (this.baseLexer.t.token == ')') /* arg list is empty? */ {
+                if (this.baseLexer.t.is(')')) /* arg list is empty? */ {
                     args.k = VVOID;
                 } else {
                     this.explist1(args);
@@ -455,7 +450,7 @@ public class LexState {
                 break;
             }
             case BaseLexer.TK_STRING: { /* funcargs -> STRING */
-                this.codestring(args, this.baseLexer.t.ts);
+                this.codestring(args, this.baseLexer.t.getString());
                 baseLexer.next(); /* must use `seminfo' before `next' */
                 break;
             }
@@ -489,7 +484,7 @@ public class LexState {
      */
     private void prefixexp(expdesc v) {
         /* prefixexp -> NAME | '(' expr ')' */
-        switch (this.baseLexer.t.token) {
+        switch (this.baseLexer.t.getToken()) {
             case '(': {
                 int line = this.baseLexer.linenumber;
                 baseLexer.next();
@@ -517,7 +512,7 @@ public class LexState {
         FuncState fs = this.fs;
         this.prefixexp(v);
         for (; ; ) {
-            switch (this.baseLexer.t.token) {
+            switch (this.baseLexer.t.getToken()) {
                 case '.': { /* field */
                     this.field(v);
                     break;
@@ -555,14 +550,14 @@ public class LexState {
          * simpleexp -> NUMBER | STRING | NIL | true | false | ... | constructor |
          * FUNCTION body | primaryexp
          */
-        switch (this.baseLexer.t.token) {
+        switch (this.baseLexer.t.getToken()) {
             case BaseLexer.TK_NUMBER: {
                 v.init(VKNUM, 0);
-                v.setNval(this.baseLexer.t.r);
+                v.setNval(this.baseLexer.t.getNumber());
                 break;
             }
             case BaseLexer.TK_STRING: {
-                this.codestring(v, this.baseLexer.t.ts);
+                this.codestring(v, this.baseLexer.t.getString());
                 break;
             }
             case BaseLexer.TK_NIL: {
@@ -660,7 +655,7 @@ public class LexState {
         int op;
         int uop;
         this.enterlevel();
-        uop = getunopr(this.baseLexer.t.token);
+        uop = getunopr(this.baseLexer.t.getToken());
         if (uop != OPR_NOUNOPR) {
             baseLexer.next();
             this.subexpr(v, UNARY_PRIORITY);
@@ -669,7 +664,7 @@ public class LexState {
             this.simpleexp(v);
         }
         /* expand while operators have priorities higher than `limit' */
-        op = getbinopr(this.baseLexer.t.token);
+        op = getbinopr(this.baseLexer.t.getToken());
         while (op != OPR_NOBINOPR && priorityLeft[op] > limit) {
             expdesc v2 = new expdesc();
             int nextop;
@@ -928,7 +923,7 @@ public class LexState {
         /* create declared variables */
         this.new_localvar(indexname, nvars++);
         while (baseLexer.testnext(',')) {
-            this.new_localvar(baseLexer.str_checkname(), nvars++);
+            this.new_localvar(baseLexer.str_checkname_next(), nvars++);
         }
         baseLexer.checknext(BaseLexer.TK_IN);
         line = this.baseLexer.linenumber;
@@ -947,9 +942,9 @@ public class LexState {
 
         baseLexer.next(); /* skip `for' */
 
-        varname = baseLexer.str_checkname(); /* first variable name */
+        varname = baseLexer.str_checkname_next(); /* first variable name */
 
-        switch (this.baseLexer.t.token) {
+        switch (this.baseLexer.t.getToken()) {
             case '=':
                 this.fornum(varname, line);
                 break;
@@ -983,12 +978,12 @@ public class LexState {
         int escapelist = NO_JUMP;
         flist = test_then_block(); /* IF cond THEN block */
 
-        while (this.baseLexer.t.token == BaseLexer.TK_ELSEIF) {
+        while (this.baseLexer.t.is(BaseLexer.TK_ELSEIF)) {
             escapelist = fs.concat(escapelist, fs.jump());
             fs.patchtohere(flist);
             flist = test_then_block(); /* ELSEIF cond THEN block */
         }
-        if (this.baseLexer.t.token == BaseLexer.TK_ELSE) {
+        if (this.baseLexer.t.is(BaseLexer.TK_ELSE)) {
             escapelist = fs.concat(escapelist, fs.jump());
             fs.patchtohere(flist);
             baseLexer.next(); /* skip ELSE (after patch, for correct line info) */
@@ -1005,7 +1000,7 @@ public class LexState {
         expdesc v = new expdesc();
         expdesc b = new expdesc();
         FuncState fs = this.fs;
-        String name = baseLexer.str_checkname();
+        String name = baseLexer.str_checkname_next();
         this.new_localvar(name, 0);
         v.init(VLOCAL, fs.freereg);
         fs.reserveregs(1);
@@ -1021,7 +1016,7 @@ public class LexState {
         int nexps;
         expdesc e = new expdesc();
         do {
-            this.new_localvar(baseLexer.str_checkname(), nvars++);
+            this.new_localvar(baseLexer.str_checkname_next(), nvars++);
         } while (baseLexer.testnext(','));
         if (baseLexer.testnext('=')) {
             nexps = this.explist1(e);
@@ -1038,11 +1033,11 @@ public class LexState {
         boolean needself = false;
         this.singlevar(v);
         String refname = v.lastname;
-        while (this.baseLexer.t.token == '.') {
+        while (this.baseLexer.t.is('.')) {
             this.field(v);
             refname += "." + v.lastname;
         }
-        if (this.baseLexer.t.token == ':') {
+        if (this.baseLexer.t.is(':')) {
             needself = true;
             this.field(v);
             refname += ":" + v.lastname;
@@ -1085,7 +1080,7 @@ public class LexState {
 
         baseLexer.next(); /* skip RETURN */
 
-        if (block_follow(this.baseLexer.t.token) || this.baseLexer.t.token == ';') {
+        if (block_follow(this.baseLexer.t.getToken()) || this.baseLexer.t.is(';')) {
             first = nret = 0; /* return no values */
         } else {
             nret = this.explist1(e); /* optional return values */
@@ -1115,7 +1110,7 @@ public class LexState {
 
     private boolean statement() {
         int line = this.baseLexer.linenumber; /* may be needed for error messages */
-        switch (this.baseLexer.t.token) {
+        switch (this.baseLexer.t.getToken()) {
             case BaseLexer.TK_IF: { /* stat -> ifstat */
                 this.ifstat(line);
                 return false;
@@ -1176,7 +1171,7 @@ public class LexState {
         /* chunk -> { stat [`;'] } */
         boolean islast = false;
         this.enterlevel();
-        while (!islast && !block_follow(this.baseLexer.t.token)) {
+        while (!islast && !block_follow(this.baseLexer.t.getToken())) {
             islast = this.statement();
             baseLexer.testnext(';');
             FuncState._assert(this.fs.f.maxStacksize >= this.fs.freereg

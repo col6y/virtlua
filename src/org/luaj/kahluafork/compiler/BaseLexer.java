@@ -148,6 +148,7 @@ class BaseLexer {
     }
 
     private String token2str(int token) {
+        // TODO: make into a toString()
         if (token < FIRST_RESERVED) {
             return iscntrl(token)
                     ? "char(" + token + ")"
@@ -157,14 +158,14 @@ class BaseLexer {
         }
     }
 
-    private String txtToken(int token) {
-        switch (token) {
+    private String txtToken(Token token) {
+        switch (token.getToken()) {
             case TK_NAME:
             case TK_STRING:
             case TK_NUMBER:
                 return buff.toString();
             default:
-                return token2str(token);
+                return token2str(token.getToken());
         }
     }
 
@@ -186,10 +187,10 @@ class BaseLexer {
         return source + end;
     }
 
-    void lexerror(String msg, int token) {
+    void lexerror(String msg, Token token) {
         String cid = chunkid(source); // TODO: get source name from source
         String errorMessage;
-        if (token != 0) {
+        if (token != null) {
             errorMessage = cid + ":" + linenumber + ": " + msg + " near `" + txtToken(token) + "`";
         } else {
             errorMessage = cid + ":" + linenumber + ": " + msg;
@@ -198,7 +199,7 @@ class BaseLexer {
     }
 
     void syntaxerror(String msg) {
-        lexerror(msg, t.token);
+        lexerror(msg, t);
     }
 
     private void inclinenumber() {
@@ -235,7 +236,7 @@ class BaseLexer {
         for (boolean endloop = false; !endloop; ) {
             switch (current) {
                 case EOZ:
-                    lexerror(is_comment ? "unfinished long comment" : "unfinished long string", TK_EOS);
+                    lexerror(is_comment ? "unfinished long comment" : "unfinished long string", Token.tok(TK_EOS));
                     break; /* to avoid warnings */
                 case '[': {
                     if (skip_sep() == sep) {
@@ -296,11 +297,11 @@ class BaseLexer {
         while (current != del) {
             switch (current) {
                 case EOZ:
-                    lexerror("unfinished string", TK_EOS);
+                    lexerror("unfinished string", Token.tok(TK_EOS));
                     continue; /* to avoid warnings */
                 case '\n':
                 case '\r':
-                    lexerror("unfinished string", TK_STRING);
+                    lexerror("unfinished string", Token.tok(TK_STRING));
                     continue; /* to avoid warnings */
                 case '\\': {
                     int c;
@@ -345,7 +346,7 @@ class BaseLexer {
                                     nextChar();
                                 } while (++i < 3 && isdigit(current));
                                 if (c > UCHAR_MAX) {
-                                    lexerror("escape sequence too large", TK_STRING);
+                                    lexerror("escape sequence too large", Token.tok(TK_STRING));
                                 }
                                 save(c);
                             }
@@ -435,7 +436,7 @@ class BaseLexer {
                     } else if (sep == -1) {
                         return Token.tok('[');
                     } else {
-                        lexerror("invalid long string delimiter", TK_STRING);
+                        lexerror("invalid long string delimiter", Token.tok(TK_STRING));
                     }
                 }
                 case '=': {
@@ -525,7 +526,7 @@ class BaseLexer {
 
     void next() {
         lastline = linenumber;
-        if (lookahead.token != TK_EOS) { /* is there a look-ahead token? */
+        if (!lookahead.is(TK_EOS)) { /* is there a look-ahead token? */
             t = lookahead;
             lookahead = Token.tok(TK_EOS); /* and discharge it */
         } else {
@@ -534,7 +535,7 @@ class BaseLexer {
     }
 
     void lookahead() {
-        FuncState._assert(lookahead.token == TK_EOS);
+        FuncState._assert(lookahead.is(TK_EOS));
         lookahead = llex();
     }
 
@@ -543,7 +544,7 @@ class BaseLexer {
     }
 
     boolean testnext(int c) {
-        if (t.token == c) {
+        if (t.is(c)) {
             next();
             return true;
         } else {
@@ -552,7 +553,7 @@ class BaseLexer {
     }
 
     void check(int c) {
-        if (t == null || t.token != c) {
+        if (!t.is(c)) {
             error_expected(c);
         }
     }
@@ -580,38 +581,12 @@ class BaseLexer {
 
     String str_checkname() {
         check(TK_NAME);
-        String ts = t.ts;
-        next();
-        return ts;
+        return t.getString();
     }
 
-    public static class Token {
-        public final int token;
-
-        /* semantics information */
-        public final double r;
-        public final String ts;
-
-        private Token(int token, double r, String ts) {
-            this.token = token;
-            this.r = r;
-            this.ts = ts;
-        }
-
-        public static Token tok(int token) {
-            return new Token(token, 0, null);
-        }
-
-        public static Token name(String name) {
-            return new Token(TK_NAME, 0, name);
-        }
-
-        public static Token string(String value) {
-            return new Token(TK_STRING, 0, value);
-        }
-
-        public static Token number(double r) {
-            return new Token(TK_NUMBER, r, null);
-        }
+    String str_checkname_next() {
+        String name = str_checkname();
+        next();
+        return name;
     }
 }
