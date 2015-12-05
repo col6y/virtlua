@@ -37,9 +37,16 @@ public final class LuaPrototype {
     public boolean isExceptionHandler;
 
     // debug info
-    public String name;
+    public final String name;
     public int[] lines;
-    public int numUpvalues, maxStacksize;
+    public int numUpvalues, maxStacksize = 2; /* minimum size: registers 0/1 are always valid */
+
+    public LuaPrototype(String name) {
+        if (name == null) {
+            throw new NullPointerException();
+        }
+        this.name = name;
+    }
 
     @Override
     public String toString() {

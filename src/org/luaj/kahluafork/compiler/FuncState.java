@@ -1,6 +1,7 @@
 /**
  * *****************************************************************************
  * Copyright (c) 2007 LuaJ. All rights reserved.
+ * Some modifications Copyright (c) 2015 Colby Skeggs.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +25,6 @@
 package org.luaj.kahluafork.compiler;
 
 import java.util.HashMap;
-import java.util.Hashtable;
 
 import org.luaj.kahluafork.compiler.LexState.ConsControl;
 import org.luaj.kahluafork.compiler.LexState.expdesc;
@@ -50,7 +50,7 @@ class FuncState {
     public static final int OP_MOVE = 0;/*	A B	R(A) := R(B)					*/
     public static final int OP_LOADK = 1;/*	A Bx	R(A) := Kst(Bx)					*/
     public static final int OP_GETUPVAL = 4; /*	A B	R(A) := UpValue[B]				*/
-//	LTable h;  /* table to find (and reuse) elements in `k' */
+    //	LTable h;  /* table to find (and reuse) elements in `k' */
     public static final int OP_SETTABLE = 9; /*	A B C	R(A)[RK(B)] := RK(C)				*/
     public static final int OP_NEWTABLE = 10; /*	A B C	R(A) := {} (size = B,C)				*/
     public static final int OP_CALL = 28; /*	A B C	R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1)) */
@@ -231,23 +231,27 @@ class FuncState {
     public String[] locvars;
     /* upvalue names */
     public String[] upvalues;
-    public int linedefined;
+    private final int linedefined;
     public int isVararg;
-    LuaPrototype f;  /* current function header */
-    HashMap<Object, Integer> htable;  /* table to find (and reuse) elements in `k' */
-    FuncState prev;  /* enclosing function */
-    LexState ls;  /* lexical state */
-    BlockCnt bl;  /* chain of current blocks */
-    int pc;  /* next position to code (equivalent to `ncode') */
-    int lasttarget;   /* `pc' of last `jump target' */
-    int jpc;  /* list of pending jumps to `pc' */
-    int freereg;  /* first free register */
-    int nk;  /* number of elements in `k' */
-    int np;  /* number of elements in `p' */
-    int nlocvars;  /* number of elements in `locvars' */
-    int nactvar;  /* number of active local variables */
+    final LuaPrototype f;  /* current function header */
+    private final HashMap<Object, Integer> htable = new HashMap<>();  /* table to find (and reuse) elements in `k' */
+    final FuncState prev;  /* enclosing function */
+    private final LexState ls;  /* lexical state */
+    BlockCnt bl = null;  /* chain of current blocks */
+    int pc = 0;  /* next position to code (equivalent to `ncode') */
+    private int lasttarget = -1;   /* `pc' of last `jump target' */
+    private int jpc = LexState.NO_JUMP;  /* list of pending jumps to `pc' */
+    int freereg = 0;  /* first free register */
+    int nk = 0;  /* number of elements in `k' */
+    int np = 0;  /* number of elements in `p' */
+    int nlocvars = 0;  /* number of elements in `locvars' */
+    int nactvar = 0;  /* number of active local variables */
 
-    FuncState() {
+    FuncState(String name, FuncState prev, LexState ls, int linedefined) {
+        f = new LuaPrototype(name);
+        this.prev = prev;
+        this.ls = ls;
+        this.linedefined = linedefined;
     }
 
     static void _assert(boolean b) {
@@ -425,7 +429,7 @@ class FuncState {
         String msg = (linedefined == 0)
                 ? "main function has more than " + limit + " " + what
                 : "function at line " + linedefined + " has more than " + limit + " " + what;
-        ls.lexerror(msg, 0);
+        ls.lexerrorNotoken(msg);
     }
 
     private int indexupvalue(String name, expdesc v) {
@@ -1439,13 +1443,13 @@ class FuncState {
         _assert(getOpMode(o) == iABC);
         _assert(getBMode(o) != OpArgN || b == 0);
         _assert(getCMode(o) != OpArgN || c == 0);
-        return this.code(CREATE_ABC(o, a, b, c), this.ls.lastline);
+        return this.code(CREATE_ABC(o, a, b, c), this.ls.baseLexer.lastline);
     }
 
     int codeABx(int o, int a, int bc) {
         _assert(getOpMode(o) == iABx || getOpMode(o) == iAsBx);
         _assert(getCMode(o) == OpArgN);
-        return this.code(CREATE_ABx(o, a, bc), this.ls.lastline);
+        return this.code(CREATE_ABx(o, a, bc), this.ls.baseLexer.lastline);
     }
 
     private void setlist(int base, int nelems, int tostore) {
@@ -1456,7 +1460,7 @@ class FuncState {
             this.codeABC(OP_SETLIST, base, b, c);
         } else {
             this.codeABC(OP_SETLIST, base, b, 0);
-            this.code(c, this.ls.lastline);
+            this.code(c, this.ls.baseLexer.lastline);
         }
         this.freereg = base + 1; /* free registers with list values */
 
