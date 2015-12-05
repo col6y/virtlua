@@ -227,25 +227,25 @@ class FuncState {
     final int[] upvalues_k = new int[LUAI_MAXUPVALUES];  /* upvalues */
     final int[] upvalues_info = new int[LUAI_MAXUPVALUES];  /* upvalues */
     final short[] actvar = new short[LUAI_MAXVARS];  /* declared-variable stack */
+    final LuaPrototype f;  /* current function header */
+    final FuncState prev;  /* enclosing function */
+    private final int linedefined;
+    private final HashMap<Object, Integer> htable = new HashMap<>();  /* table to find (and reuse) elements in `k' */
+    private final LexState ls;  /* lexical state */
     /* information about local variables */
     public String[] locvars;
     /* upvalue names */
     public String[] upvalues;
-    private final int linedefined;
     public int isVararg;
-    final LuaPrototype f;  /* current function header */
-    private final HashMap<Object, Integer> htable = new HashMap<>();  /* table to find (and reuse) elements in `k' */
-    final FuncState prev;  /* enclosing function */
-    private final LexState ls;  /* lexical state */
     BlockCnt bl = null;  /* chain of current blocks */
     int pc = 0;  /* next position to code (equivalent to `ncode') */
-    private int lasttarget = -1;   /* `pc' of last `jump target' */
-    private int jpc = LexState.NO_JUMP;  /* list of pending jumps to `pc' */
     int freereg = 0;  /* first free register */
     int nk = 0;  /* number of elements in `k' */
     int np = 0;  /* number of elements in `p' */
     int nlocvars = 0;  /* number of elements in `locvars' */
     int nactvar = 0;  /* number of active local variables */
+    private int lasttarget = -1;   /* `pc' of last `jump target' */
+    private int jpc = LexState.NO_JUMP;  /* list of pending jumps to `pc' */
 
     FuncState(String name, FuncState prev, LexState ls, int linedefined) {
         f = new LuaPrototype(name);

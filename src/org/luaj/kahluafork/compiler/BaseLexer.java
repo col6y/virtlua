@@ -32,10 +32,9 @@ import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 
 class BaseLexer {
-    static final int EOZ = (-1);
-    private static final int UCHAR_MAX = 255; // TODO, convert to unicode CHAR_MAX?
     static final int MAX_INT = Integer.MAX_VALUE - 2;
-    final static int /* terminal symbols denoted by reserved words */ TK_AND = 257;
+    /* terminal symbols denoted by reserved words */
+    final static int TK_AND = 257;
     final static int TK_BREAK = 258;
     final static int TK_DO = 259;
     final static int TK_ELSE = 260;
@@ -56,6 +55,18 @@ class BaseLexer {
     final static int TK_TRUE = 275;
     final static int TK_UNTIL = 276;
     final static int TK_WHILE = 277;
+    final static int TK_CONCAT = 278;
+    final static int TK_DOTS = 279;
+    final static int TK_EQ = 280;
+    final static int TK_GE = 281;
+    final static int TK_LE = 282;
+    final static int TK_NE = 283;
+    final static int TK_NUMBER = 284;
+    final static int TK_NAME = 285;
+    final static int TK_STRING = 286;
+    final static int TK_EOS = 287;
+    private static final int EOZ = (-1);
+    private static final int UCHAR_MAX = 255; // TODO, convert to unicode CHAR_MAX?
     private static final int MAXSRC = 80;
     private final static int FIRST_RESERVED = TK_AND;
     private final static int NUM_RESERVED = TK_WHILE + 1 - FIRST_RESERVED;
@@ -75,36 +86,16 @@ class BaseLexer {
         }
     }
 
-    private static String LUA_QS(String s) {
-        return "'" + s + "'";
-    }
-
-    static String LUA_QL(Object o) {
-        return LUA_QS(String.valueOf(o));
-    }
-
-    final static int/* other terminal symbols */
-            TK_CONCAT = 278;
-    final static int TK_DOTS = 279;
-    final static int TK_EQ = 280;
-    final static int TK_GE = 281;
-    final static int TK_LE = 282;
-    final static int TK_NE = 283;
-    final static int TK_NUMBER = 284;
-    final static int TK_NAME = 285;
-    final static int TK_STRING = 286;
-    final static int TK_EOS = 287;
     final Token t = new Token();  /* current token */
     final Token lookahead = new Token();  /* look ahead token */
-    int lastline = 1;  /* line of last token `consumed' */
-    int current;  /* current character (charint) */
-    int linenumber = 1;  /* input line counter */
     private final Reader z;  /* input stream */
-    private byte[] buff = new byte[32];  /* buffer for tokens */
-    private int nbuff = 0; /* length of buffer */
     private final String source;  /* current source name */
     private final HashMap<String, String> strings = new HashMap<>();
-
+    int lastline = 1;  /* line of last token `consumed' */
+    int linenumber = 1;  /* input line counter */
+    private int current;  /* current character (charint) */
+    private byte[] buff = new byte[32];  /* buffer for tokens */
+    private int nbuff = 0; /* length of buffer */
     public BaseLexer(int firstByte, Reader z, String source) {
         this.z = z;
         this.source = source;
@@ -114,16 +105,24 @@ class BaseLexer {
         next();
     }
 
+    private static String LUA_QS(String s) {
+        return "'" + s + "'";
+    }
+
+    static String LUA_QL(Object o) {
+        return LUA_QS(String.valueOf(o));
+    }
+
+    private static boolean iscntrl(int token) {
+        return token < ' ';
+    }
+
     private void skipShebang() {
         if (current == '#') {
             while (!currIsNewline() && current != BaseLexer.EOZ) {
                 nextChar();
             }
         }
-    }
-
-    private static boolean iscntrl(int token) {
-        return token < ' ';
     }
 
     private boolean isalnum(int c) {
@@ -142,7 +141,7 @@ class BaseLexer {
         return (c >= '0' && c <= '9');
     }
 
-    void nextChar() {
+    private void nextChar() {
         try {
             current = z.read();
         } catch (IOException e) {
@@ -151,7 +150,7 @@ class BaseLexer {
         }
     }
 
-    boolean currIsNewline() {
+    private boolean currIsNewline() {
         return current == '\n' || current == '\r';
     }
 

@@ -117,13 +117,6 @@ public class LexState {
         return funcstate.f;
     }
 
-    private void compile() {
-        chunk();
-        baseLexer.check(BaseLexer.TK_EOS);
-        close_func();
-        FuncState._assert(fs == null);
-    }
-
     /*
      ** converts an integer to a "floating point byte", represented as
      ** (eeeeexxx), where the real value is (1xxx) * 2^(eeeee - 1) if
@@ -143,16 +136,23 @@ public class LexState {
         }
     }
 
+    private static boolean hasmultret(int k) {
+        return ((k) == VCALL || (k) == VVARARG);
+    }
+
+    private void compile() {
+        chunk();
+        baseLexer.check(BaseLexer.TK_EOS);
+        close_func();
+        FuncState._assert(fs == null);
+    }
+
     void lexerrorNotoken(String msg) {
         baseLexer.lexerror(msg, 0);
     }
 
     void syntaxerror(String msg) {
         baseLexer.syntaxerror(msg);
-    }
-
-    private static boolean hasmultret(int k) {
-        return ((k) == VCALL || (k) == VVARARG);
     }
 
     private void checkname(expdesc e) {
