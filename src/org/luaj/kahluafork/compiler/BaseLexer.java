@@ -76,7 +76,7 @@ class BaseLexer {
             "in", "local", "nil", "not", "or", "repeat",
             "return", "then", "true", "until", "while",
             "..", "...", "==", ">=", "<=", "~=",
-            "<number>", "<name>", "<string>", "<eof>",};
+            "<number>", "<name>", "<string>", "<eof>"};
     private final static HashMap<String, Integer> RESERVED = new HashMap<>();
 
     static {
@@ -98,7 +98,7 @@ class BaseLexer {
     public BaseLexer(int firstByte, Reader z, String source) {
         this.z = z;
         this.source = source;
-        this.lookahead = new Token(TK_EOS); /* no look-ahead token */
+        this.lookahead = Token.tok(TK_EOS); /* no look-ahead token */
         this.current = firstByte; /* read first char */
         skipShebang();
         next();
@@ -409,7 +409,7 @@ class BaseLexer {
                 case '-': {
                     nextChar();
                     if (current != '-') {
-                        return new Token('-');
+                        return Token.tok('-');
                     }
                     /* else is a comment */
                     nextChar();
@@ -433,7 +433,7 @@ class BaseLexer {
                     if (sep >= 0) {
                         return Token.string(read_long_string(false, sep));
                     } else if (sep == -1) {
-                        return new Token('[');
+                        return Token.tok('[');
                     } else {
                         lexerror("invalid long string delimiter", TK_STRING);
                     }
@@ -441,37 +441,37 @@ class BaseLexer {
                 case '=': {
                     nextChar();
                     if (current != '=') {
-                        return new Token('=');
+                        return Token.tok('=');
                     } else {
                         nextChar();
-                        return new Token(TK_EQ);
+                        return Token.tok(TK_EQ);
                     }
                 }
                 case '<': {
                     nextChar();
                     if (current != '=') {
-                        return new Token('<');
+                        return Token.tok('<');
                     } else {
                         nextChar();
-                        return new Token(TK_LE);
+                        return Token.tok(TK_LE);
                     }
                 }
                 case '>': {
                     nextChar();
                     if (current != '=') {
-                        return new Token('>');
+                        return Token.tok('>');
                     } else {
                         nextChar();
-                        return new Token(TK_GE);
+                        return Token.tok(TK_GE);
                     }
                 }
                 case '~': {
                     nextChar();
                     if (current != '=') {
-                        return new Token('~');
+                        return Token.tok('~');
                     } else {
                         nextChar();
-                        return new Token(TK_NE);
+                        return Token.tok(TK_NE);
                     }
                 }
                 case '"':
@@ -482,18 +482,18 @@ class BaseLexer {
                     save_and_next();
                     if (check_next(".")) {
                         if (check_next(".")) {
-                            return new Token(TK_DOTS); /* ... */
+                            return Token.tok(TK_DOTS); /* ... */
                         } else {
-                            return new Token(TK_CONCAT); /* .. */
+                            return Token.tok(TK_CONCAT); /* .. */
                         }
                     } else if (!isdigit(current)) {
-                        return new Token('.');
+                        return Token.tok('.');
                     } else {
                         return Token.number(read_numeral());
                     }
                 }
                 case EOZ: {
-                    return new Token(TK_EOS);
+                    return Token.tok(TK_EOS);
                 }
                 default: {
                     if (current <= ' ') {
@@ -509,14 +509,14 @@ class BaseLexer {
                         } while (isidentifierchar(current));
                         ts = buff.toString();
                         if (RESERVED.containsKey(ts)) {
-                            return new Token(RESERVED.get(ts));
+                            return Token.tok(RESERVED.get(ts));
                         } else {
                             return Token.name(newTString(ts));
                         }
                     } else {
                         int c = current;
                         nextChar();
-                        return new Token(c); /* single-char tokens (+ - / ...) */
+                        return Token.tok(c); /* single-char tokens (+ - / ...) */
                     }
                 }
             }
@@ -527,7 +527,7 @@ class BaseLexer {
         lastline = linenumber;
         if (lookahead.token != TK_EOS) { /* is there a look-ahead token? */
             t = lookahead;
-            lookahead = new Token(TK_EOS); /* and discharge it */
+            lookahead = Token.tok(TK_EOS); /* and discharge it */
         } else {
             t = llex(); /* read next token */
         }
@@ -552,7 +552,7 @@ class BaseLexer {
     }
 
     void check(int c) {
-        if (t.token != c) {
+        if (t == null || t.token != c) {
             error_expected(c);
         }
     }
@@ -563,7 +563,7 @@ class BaseLexer {
     }
 
     void check_condition(boolean c, String msg) {
-        if (!(c)) {
+        if (!c) {
             syntaxerror(msg);
         }
     }
@@ -579,9 +579,8 @@ class BaseLexer {
     }
 
     String str_checkname() {
-        String ts;
         check(TK_NAME);
-        ts = t.ts;
+        String ts = t.ts;
         next();
         return ts;
     }
@@ -599,8 +598,8 @@ class BaseLexer {
             this.ts = ts;
         }
 
-        public Token(int token) {
-            this(token, 0, null);
+        public static Token tok(int token) {
+            return new Token(token, 0, null);
         }
 
         public static Token name(String name) {

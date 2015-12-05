@@ -330,14 +330,6 @@ class FuncState {
         return a;
     }
 
-    static byte[] realloc(byte[] v, int n) {
-        byte[] a = new byte[n];
-        if (v != null) {
-            System.arraycopy(v, 0, a, 0, Math.min(v.length, n));
-        }
-        return a;
-    }
-
     // from lopcodes.h
 
     /*
