@@ -28,7 +28,6 @@ import se.krka.kahlua.vm.LuaException;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.util.HashMap;
 
 class BaseLexer {
     static final int MAX_INT = Integer.MAX_VALUE - 2;
@@ -39,7 +38,6 @@ class BaseLexer {
     Token lookahead;  /* look ahead token */
     private final Reader z;  /* input stream */
     private final String source;  /* current source name */
-    private final HashMap<String, String> strings = new HashMap<>();
     int lastline = 1;  /* line of last token `consumed' */
     int linenumber = 1;  /* input line counter */
     private int current;  /* current character (charint) */
@@ -198,20 +196,7 @@ class BaseLexer {
                 }
             }
         }
-        return is_comment ? null : newstring(2 + sep, buff.length() - 2 * (2 + sep));
-    }
-
-    private String newstring(int offset, int len) {
-        return newstring(buff.substring(offset, offset + len));
-    }
-
-    String newstring(String s) {
-        String t = strings.get(s);
-        if (t == null) {
-            t = s;
-            strings.put(t, t);
-        }
-        return t;
+        return is_comment ? null : buff.substring(2 + sep, buff.length() - (2 + sep));
     }
 
     private String read_string(int del) {
@@ -286,7 +271,7 @@ class BaseLexer {
         }
         save_and_next(); /* skip delimiter */
 
-        return newstring(1, buff.length() - 2);
+        return buff.substring(1, 1 + buff.length() - 2);
     }
 
     private boolean check_next(String set) {
@@ -431,7 +416,7 @@ class BaseLexer {
                         do {
                             save_and_next();
                         } while (isidentifierchar(current));
-                        ts = newstring(buff.toString());
+                        ts = buff.toString();
                         return Token.nameOrKeyword(ts);
                     } else {
                         int c = current;

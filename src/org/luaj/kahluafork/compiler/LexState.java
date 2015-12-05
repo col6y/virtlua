@@ -168,11 +168,6 @@ public class LexState {
         return fs.nlocvars++;
     }
 
-    private void new_localvarliteral(String v, int n) {
-        String ts = baseLexer.newstring(v);
-        new_localvar(ts, n);
-    }
-
     private void new_localvar(String name, int n) {
         FuncState fs = this.fs;
         fs.checklimit(fs.nactvar + n + 1, FuncState.LUAI_MAXVARS, "local variables");
@@ -402,7 +397,7 @@ public class LexState {
         FuncState new_fs = fs;
         baseLexer.checknext('(');
         if (needself) {
-            new_localvarliteral("self", 0);
+            new_localvar("self", 0);
             adjustlocalvars(1);
         }
         this.parlist();
@@ -890,9 +885,9 @@ public class LexState {
         /* fornum -> NAME = exp1,exp1[,exp1] forbody */
         FuncState fs = this.fs;
         int base = fs.freereg;
-        this.new_localvarliteral(RESERVED_LOCAL_VAR_FOR_INDEX, 0);
-        this.new_localvarliteral(RESERVED_LOCAL_VAR_FOR_LIMIT, 1);
-        this.new_localvarliteral(RESERVED_LOCAL_VAR_FOR_STEP, 2);
+        new_localvar(RESERVED_LOCAL_VAR_FOR_INDEX, 0);
+        new_localvar(RESERVED_LOCAL_VAR_FOR_LIMIT, 1);
+        new_localvar(RESERVED_LOCAL_VAR_FOR_STEP, 2);
         this.new_localvar(varname, 3);
         baseLexer.checknext('=');
         this.exp1(); /* initial value */
@@ -917,9 +912,9 @@ public class LexState {
         int line;
         int base = fs.freereg;
         /* create control variables */
-        this.new_localvarliteral(RESERVED_LOCAL_VAR_FOR_GENERATOR, nvars++);
-        this.new_localvarliteral(RESERVED_LOCAL_VAR_FOR_STATE, nvars++);
-        this.new_localvarliteral(RESERVED_LOCAL_VAR_FOR_CONTROL, nvars++);
+        new_localvar(RESERVED_LOCAL_VAR_FOR_GENERATOR, nvars++);
+        new_localvar(RESERVED_LOCAL_VAR_FOR_STATE, nvars++);
+        new_localvar(RESERVED_LOCAL_VAR_FOR_CONTROL, nvars++);
         /* create declared variables */
         this.new_localvar(indexname, nvars++);
         while (baseLexer.testnext(',')) {
