@@ -33,15 +33,14 @@ class BaseLexer {
     static final int MAX_INT = Integer.MAX_VALUE - 2;
     private static final int EOZ = (-1);
     private static final int MAXSRC = 80;
-
-    private Token t = null;  /* current token */
-    private Token lookahead;  /* look ahead token */
     private final Reader z;  /* input stream */
     private final String source;  /* current source name */
+    private final StringBuilder buff = new StringBuilder();
+    private Token t = null;  /* current token */
+    private Token lookahead;  /* look ahead token */
     private int lastline = 1;  /* line of last token `consumed' */
     private int linenumber = 1;  /* input line counter */
     private int current;  /* current character (charint) */
-    private final StringBuilder buff = new StringBuilder();
 
     public BaseLexer(int firstByte, Reader z, String source) {
         this.z = z;
