@@ -133,6 +133,8 @@ public class LexState {
         }
     }
 
+    // *** STATEMENTS ***
+
     private boolean statement() {
         int line = lexer.getLine(); /* may be needed for error messages */
         switch (lexer.switchToken()) {
@@ -140,7 +142,7 @@ public class LexState {
                 ifstat(line);
                 return false;
             case Token.TK_WHILE: /* stat -> whilestat */
-                whilestat(line, lexer.getLastLine());
+                whilestat(line);
                 return false;
             case Token.TK_DO: /* stat -> DO block END */
                 lexer.next(); /* skip DO */
@@ -151,7 +153,7 @@ public class LexState {
                 forstat(line);
                 return false;
             case Token.TK_REPEAT: /* stat -> repeatstat */
-                repeatstat(line, lexer.getLastLine());
+                repeatstat(line);
                 return false;
             case Token.TK_FUNCTION:
                 funcstat(line); /* stat -> funcstat */
@@ -169,7 +171,7 @@ public class LexState {
                 return true; /* must be last statement */
             case Token.TK_BREAK: /* stat -> breakstat */
                 lexer.next(); /* skip BREAK */
-                breakstat(lexer.getLastLine());
+                breakstat();
                 return true; /* must be last statement */
             default:
                 exprstat();
@@ -177,6 +179,52 @@ public class LexState {
         }
     }
 
+    private void ifstat(int line) {
+        /* ifstat -> IF cond THEN block {ELSEIF cond THEN block} [ELSE block] END */
+        int escapelist = NO_JUMP;
+        int flist = test_then_block(); /* IF cond THEN block */
+        while (lexer.test(Token.TK_ELSEIF)) {
+            escapelist = fs.concat(escapelist, fs.jump(lexer.getLastLine()));
+            fs.patchtohere(flist);
+            flist = test_then_block(); /* ELSEIF cond THEN block */
+        }
+        if (lexer.test(Token.TK_ELSE)) {
+            escapelist = fs.concat(escapelist, fs.jump(lexer.getLastLine()));
+            fs.patchtohere(flist);
+            lexer.next(); /* skip ELSE (after patch, for correct line info) */
+            block(); /* `else' part */
+        } else {
+            escapelist = fs.concat(escapelist, flist);
+        }
+        fs.patchtohere(escapelist);
+        lexer.check_match(Token.TK_END, Token.TK_IF, line);
+    }
+
+    private int test_then_block() {
+        /* test_then_block -> [IF | ELSEIF] cond THEN block */
+        lexer.next(); /* skip IF or ELSEIF */
+        int condexit = cond();
+        lexer.checknext(Token.TK_THEN);
+        block(); /* `then' part */
+        return condexit;
+    }
+
+    // *** EXPRESSIONS ***
+
+    private int cond() {
+        /* cond -> exp */
+        expdesc v = new expdesc();
+        /* read condition */
+        expr(v);
+        /* `falses' are all equal here */
+        if (v.k == VNIL) {
+            v.k = VFALSE;
+        }
+        fs.goiftrue(v, lexer.getLastLine());
+        return v.f;
+    }
+
+    // *** UNPORTED ***
 
     void syntaxerror(String msg) {
         lexer.syntaxerror(msg);
@@ -717,20 +765,7 @@ public class LexState {
         fs.storevar(lh.v, e, lexer.getLastLine());
     }
 
-    private int cond() {
-        /* cond -> exp */
-        expdesc v = new expdesc();
-        /* read condition */
-        expr(v);
-        /* `falses' are all equal here */
-        if (v.k == VNIL) {
-            v.k = VFALSE;
-        }
-        fs.goiftrue(v, lexer.getLastLine());
-        return v.f;
-    }
-
-    private void breakstat(int lastline) {
+    private void breakstat() {
         BlockCnt bl = fs.bl;
         boolean upval = false;
         while (bl != null && !bl.isbreakable) {
@@ -743,10 +778,10 @@ public class LexState {
         if (upval) {
             fs.codeABC(FuncState.OP_CLOSE, bl.nactvar, 0, 0, lexer.getLastLine());
         }
-        bl.breaklist = fs.concat(bl.breaklist, fs.jump(lastline));
+        bl.breaklist = fs.concat(bl.breaklist, fs.jump(lexer.getLastLine()));
     }
 
-    private void whilestat(int line, int lastline) {
+    private void whilestat(int line) {
         /* whilestat -> WHILE cond DO block END */
         int whileinit;
         int condexit;
@@ -758,13 +793,13 @@ public class LexState {
         fs.enterblock(bl, true);
         lexer.checknext(Token.TK_DO);
         block();
-        fs.patchlist(fs.jump(lastline), whileinit);
+        fs.patchlist(fs.jump(lexer.getLastLine()), whileinit);
         lexer.check_match(Token.TK_END, Token.TK_WHILE, line);
         fs.leaveblock(fs, lexer.getLastLine());
         fs.patchtohere(condexit);  /* false conditions finish the loop */
     }
 
-    private void repeatstat(int line, int lastline) {
+    private void repeatstat(int line) {
         /* repeatstat -> REPEAT block UNTIL cond */
         int condexit;
         int repeat_init = fs.getlabel();
@@ -785,7 +820,7 @@ public class LexState {
 
             fs.patchlist(condexit, repeat_init); /* close the loop */
         } else { /* complete semantics when there are upvalues */
-            breakstat(lastline); /* if condition then break */
+            breakstat(); /* if condition then break */
 
             fs.patchtohere(condexit); /* else... */
 
@@ -893,42 +928,6 @@ public class LexState {
         }
         lexer.check_match(Token.TK_END, Token.TK_FOR, line);
         fs.leaveblock(fs, lexer.getLastLine()); /* loop scope (`break' jumps to this point) */
-    }
-
-    private int test_then_block() {
-        /* test_then_block -> [IF | ELSEIF] cond THEN block */
-        int condexit;
-        lexer.next(); /* skip IF or ELSEIF */
-
-        condexit = cond();
-        lexer.checknext(Token.TK_THEN);
-        block(); /* `then' part */
-
-        return condexit;
-    }
-
-    private void ifstat(int line) {
-        /* ifstat -> IF cond THEN block {ELSEIF cond THEN block} [ELSE block] END */
-        int flist;
-        int escapelist = NO_JUMP;
-        flist = test_then_block(); /* IF cond THEN block */
-
-        while (lexer.test(Token.TK_ELSEIF)) {
-            escapelist = fs.concat(escapelist, fs.jump(lexer.getLastLine()));
-            fs.patchtohere(flist);
-            flist = test_then_block(); /* ELSEIF cond THEN block */
-        }
-        if (lexer.test(Token.TK_ELSE)) {
-            escapelist = fs.concat(escapelist, fs.jump(lexer.getLastLine()));
-            fs.patchtohere(flist);
-            lexer.next(); /* skip ELSE (after patch, for correct line info) */
-
-            block(); /* `else' part */
-        } else {
-            escapelist = fs.concat(escapelist, flist);
-        }
-        fs.patchtohere(escapelist);
-        lexer.check_match(Token.TK_END, Token.TK_IF, line);
     }
 
     private void localfunc() {

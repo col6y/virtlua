@@ -732,9 +732,8 @@ class FuncState {
     int concat(int l1, int l2) {
         if (l2 == LexState.NO_JUMP) {
             return l1;
-        }
-        if (l1 == LexState.NO_JUMP) {
-            l1 = l2;
+        } else if (l1 == LexState.NO_JUMP) {
+            return l2;
         } else {
             int list = l1;
             int next;
@@ -742,8 +741,8 @@ class FuncState {
                 list = next;
             }
             this.fixjump(list, l2);
+            return l1;
         }
-        return l1;
     }
 
     void checkstack(int n) {
