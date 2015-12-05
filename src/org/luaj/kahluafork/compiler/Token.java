@@ -1,3 +1,27 @@
+/**
+ * *****************************************************************************
+ * Copyright (c) 2007 LuaJ. All rights reserved.
+ * Some modifications Copyright (c) 2015 Colby Skeggs.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ * ****************************************************************************
+ */
 package org.luaj.kahluafork.compiler;
 
 import java.util.HashMap;
@@ -47,11 +71,13 @@ public class Token {
             "..", "...", "==", ">=", "<=", "~=",
             "<number>", "<name>", "<string>", "<eof>"};
     private final static HashMap<String, Integer> RESERVED = new HashMap<>();
+
     static {
         for (int i = 0; i < NUM_RESERVED; i++) {
             RESERVED.put(luaX_tokens[i], FIRST_RESERVED + i);
         }
     }
+
     private final int token;
     private final double r;
     private final String ts;
@@ -138,6 +164,56 @@ public class Token {
                 return Double.toString(r);
             default:
                 return toString(token);
+        }
+    }
+
+    public int toUnary() {
+        switch (token) {
+            case TK_NOT:
+                return LexState.OPR_NOT;
+            case '-':
+                return LexState.OPR_MINUS;
+            case '#':
+                return LexState.OPR_LEN;
+            default:
+                return LexState.OPR_NOUNOPR;
+        }
+    }
+
+    public int toBinary() {
+        switch (token) {
+            case '+':
+                return LexState.OPR_ADD;
+            case '-':
+                return LexState.OPR_SUB;
+            case '*':
+                return LexState.OPR_MUL;
+            case '/':
+                return LexState.OPR_DIV;
+            case '%':
+                return LexState.OPR_MOD;
+            case '^':
+                return LexState.OPR_POW;
+            case TK_CONCAT:
+                return LexState.OPR_CONCAT;
+            case TK_NE:
+                return LexState.OPR_NE;
+            case TK_EQ:
+                return LexState.OPR_EQ;
+            case '<':
+                return LexState.OPR_LT;
+            case TK_LE:
+                return LexState.OPR_LE;
+            case '>':
+                return LexState.OPR_GT;
+            case TK_GE:
+                return LexState.OPR_GE;
+            case TK_AND:
+                return LexState.OPR_AND;
+            case TK_OR:
+                return LexState.OPR_OR;
+            default:
+                return LexState.OPR_NOBINOPR;
         }
     }
 }

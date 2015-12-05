@@ -71,7 +71,7 @@ class BaseLexer {
         try {
             current = z.read();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new LuaException("in BaseLexer.nextChar(): " + e.getMessage());
         }
     }
 

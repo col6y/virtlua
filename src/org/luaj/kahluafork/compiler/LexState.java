@@ -79,9 +79,8 @@ public class LexState {
     private static final String RESERVED_LOCAL_VAR_FOR_STEP = "(for step)";
     private static final String RESERVED_LOCAL_VAR_FOR_LIMIT = "(for limit)";
     private static final String RESERVED_LOCAL_VAR_FOR_INDEX = "(for index)";
-    private static final int LUAI_MAXCCALLS = 200;
-    private static final int OPR_NOBINOPR = 15;
-    private static final int OPR_NOUNOPR = 3;
+    static final int OPR_NOBINOPR = 15;
+    static final int OPR_NOUNOPR = 3;
     private static final int[] priorityLeft = {
             6, 6, 7, 7, 7, /* `+' `-' `/' `%' */
             10, 5, /* power and concat (right associative) */
@@ -96,7 +95,6 @@ public class LexState {
             2, 1 /* logical (and/or) */};
     private static final int UNARY_PRIORITY = 8;  /* priority for unary operators */
     private final BaseLexer baseLexer;
-    private int nCcalls;
     private FuncState fs;  /* `FuncState' is private to the parser */
 
     private LexState(int firstByte, Reader stream, String name) {
@@ -210,16 +208,6 @@ public class LexState {
                 fs.nil(reg, extra, baseLexer.getLastLine());
             }
         }
-    }
-
-    private void enterlevel() {
-        if (++nCcalls > LUAI_MAXCCALLS) {
-            syntaxerror("chunk has too many syntax levels");
-        }
-    }
-
-    private void leavelevel() {
-        nCcalls--;
     }
 
     private void pushclosure(FuncState func, expdesc v) {
@@ -582,65 +570,12 @@ public class LexState {
         baseLexer.next();
     }
 
-    private int getunopr(Token op) {
-        switch (op.getToken()) {
-            case Token.TK_NOT:
-                return OPR_NOT;
-            case '-':
-                return OPR_MINUS;
-            case '#':
-                return OPR_LEN;
-            default:
-                return OPR_NOUNOPR;
-        }
-    }
-
-    private int getbinopr(Token op) {
-        switch (op.getToken()) {
-            case '+':
-                return OPR_ADD;
-            case '-':
-                return OPR_SUB;
-            case '*':
-                return OPR_MUL;
-            case '/':
-                return OPR_DIV;
-            case '%':
-                return OPR_MOD;
-            case '^':
-                return OPR_POW;
-            case Token.TK_CONCAT:
-                return OPR_CONCAT;
-            case Token.TK_NE:
-                return OPR_NE;
-            case Token.TK_EQ:
-                return OPR_EQ;
-            case '<':
-                return OPR_LT;
-            case Token.TK_LE:
-                return OPR_LE;
-            case '>':
-                return OPR_GT;
-            case Token.TK_GE:
-                return OPR_GE;
-            case Token.TK_AND:
-                return OPR_AND;
-            case Token.TK_OR:
-                return OPR_OR;
-            default:
-                return OPR_NOBINOPR;
-        }
-    }
-
     /*
      ** subexpr -> (simpleexp | unop subexpr) { binop subexpr }
      ** where `binop' is any binary operator with a priority higher than `limit'
      */
     private int subexpr(expdesc v, int limit) {
-        int op;
-        int uop;
-        this.enterlevel();
-        uop = getunopr(this.baseLexer.getToken());
+        int uop = this.baseLexer.getToken().toUnary();
         if (uop != OPR_NOUNOPR) {
             baseLexer.next();
             this.subexpr(v, UNARY_PRIORITY);
@@ -649,7 +584,7 @@ public class LexState {
             this.simpleexp(v);
         }
         /* expand while operators have priorities higher than `limit' */
-        op = getbinopr(this.baseLexer.getToken());
+        int op = this.baseLexer.getToken().toBinary();
         while (op != OPR_NOBINOPR && priorityLeft[op] > limit) {
             expdesc v2 = new expdesc();
             int nextop;
@@ -660,7 +595,6 @@ public class LexState {
             fs.posfix(op, v, v2, baseLexer.getLastLine());
             op = nextop;
         }
-        this.leavelevel();
         return op; /* return first untreated operator */
     }
 
@@ -1142,7 +1076,6 @@ public class LexState {
             default: {
                 this.exprstat();
                 return false; /* to avoid warnings */
-
             }
         }
     }
@@ -1150,7 +1083,6 @@ public class LexState {
     private void chunk() {
         /* chunk -> { stat [`;'] } */
         boolean islast = false;
-        this.enterlevel();
         while (!islast && !block_follow(this.baseLexer.getToken())) {
             islast = this.statement();
             baseLexer.testnext(';');
@@ -1158,7 +1090,6 @@ public class LexState {
                     && this.fs.freereg >= this.fs.nactvar);
             this.fs.freereg = this.fs.nactvar; /* free registers */
         }
-        this.leavelevel();
     }
 
     static class expdesc {
@@ -1206,11 +1137,6 @@ public class LexState {
         }
     }
 
-    /*
-     ** {======================================================================
-     ** Rules for Constructors
-     ** =======================================================================
-     */
     static class ConsControl {
         final expdesc v = new expdesc(); /* last list item read */
         expdesc t; /* table descriptor */
@@ -1219,10 +1145,6 @@ public class LexState {
         int tostore; /* number of array elements pending to be stored */
     }
 
-    /*
-     ** structure to chain all variables in the left-hand side of an
-     ** assignment
-     */
     static class LHS_assign {
         /* variable (global, local, upvalue, or indexed) */
         final expdesc v = new expdesc();
