@@ -121,10 +121,6 @@ class BaseLexer {
         throw new LuaException(errorMessage);
     }
 
-    void syntaxerror(String msg) {
-        lexerror(msg, t);
-    }
-
     private void inclinenumber() {
         int old = current;
         FuncState._assert(currIsNewline());
@@ -427,6 +423,15 @@ class BaseLexer {
         }
     }
 
+    private void lookahead() {
+        FuncState._assert(lookahead.is(Token.TK_EOS));
+        lookahead = llex();
+    }
+
+    private void error_expected(int token) {
+        syntaxerror("'" + Token.toString(token) + "' expected");
+    }
+
     void next() {
         lastline = linenumber;
         if (!lookahead.is(Token.TK_EOS)) { /* is there a look-ahead token? */
@@ -435,15 +440,6 @@ class BaseLexer {
         } else {
             t = llex(); /* read next token */
         }
-    }
-
-    private void lookahead() {
-        FuncState._assert(lookahead.is(Token.TK_EOS));
-        lookahead = llex();
-    }
-
-    private void error_expected(int token) {
-        syntaxerror("'" + Token.toString(token) + "' expected");
     }
 
     boolean test(int c) {
@@ -528,5 +524,9 @@ class BaseLexer {
 
     public Token getToken() {
         return t;
+    }
+
+    void syntaxerror(String msg) {
+        lexerror(msg, t);
     }
 }

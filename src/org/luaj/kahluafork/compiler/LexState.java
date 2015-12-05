@@ -175,13 +175,11 @@ public class LexState {
     }
 
     private void adjustlocalvars(int nvars) {
-        FuncState fs = this.fs;
-        fs.nactvar = (fs.nactvar + nvars);
+        this.fs.nactvar = (this.fs.nactvar + nvars);
     }
 
     void removevars(int tolevel) {
-        FuncState fs = this.fs;
-        fs.nactvar = tolevel;
+        this.fs.nactvar = tolevel;
     }
 
     private void singlevar(expdesc var) {
@@ -193,7 +191,7 @@ public class LexState {
         }
     }
 
-    private void adjust_assign(int nvars, int nexps, expdesc e) {
+    private void adjust_assign(int nvars, int nexps, expdesc e, int lastline) {
         FuncState fs = this.fs;
         int extra = nvars - nexps;
         if (hasmultret(e.k)) {
@@ -210,12 +208,12 @@ public class LexState {
         } else {
             /* close last expression */
             if (e.k != VVOID) {
-                fs.exp2nextreg(e);
+                fs.exp2nextreg(e, lastline);
             }
             if (extra > 0) {
                 int reg = fs.freereg;
                 fs.reserveregs(extra);
-                fs.nil(reg, extra);
+                fs.nil(reg, extra, baseLexer.getLastLine());
             }
         }
     }
@@ -237,11 +235,11 @@ public class LexState {
             f.prototypes = FuncState.realloc(f.prototypes, fs.np * 2 + 1);
         }
         f.prototypes[fs.np++] = func.f;
-        v.init(VRELOCABLE, fs.codeABx(FuncState.OP_CLOSURE, 0, fs.np - 1));
+        v.init(VRELOCABLE, fs.codeABx(FuncState.OP_CLOSURE, 0, fs.np - 1, baseLexer.getLastLine()));
         for (int i = 0; i < func.f.numUpvalues; i++) {
             int o = (func.upvalues_k[i] == VLOCAL) ? FuncState.OP_MOVE
                     : FuncState.OP_GETUPVAL;
-            fs.codeABC(o, 0, func.upvalues_info[i], 0);
+            fs.codeABC(o, 0, func.upvalues_info[i], 0, baseLexer.getLastLine());
         }
     }
 
@@ -251,7 +249,7 @@ public class LexState {
         f.isVararg = fs.isVararg != 0;
 
         this.removevars(0);
-        fs.ret(0, 0); /* final return */
+        fs.ret(0, 0, baseLexer.getLastLine()); /* final return */
 
         f.code = FuncState.realloc(f.code, fs.pc);
         f.lines = FuncState.realloc(f.lines, fs.pc);
@@ -270,12 +268,12 @@ public class LexState {
         /* field -> ['.' | ':'] NAME */
         FuncState fs = this.fs;
         expdesc key = new expdesc();
-        fs.exp2anyreg(v);
+        fs.exp2anyreg(v, baseLexer.getLastLine());
         baseLexer.next(); /* skip the dot or colon */
 
         v.lastname = baseLexer.str_checkname();
         checkname(key);
-        fs.indexed(v, key);
+        fs.indexed(v, key, baseLexer.getLastLine());
     }
 
     private void yindex(expdesc v) {
@@ -283,7 +281,7 @@ public class LexState {
         baseLexer.next(); /* skip the '[' */
 
         this.expr(v);
-        this.fs.exp2val(v);
+        this.fs.exp2val(v, baseLexer.getLastLine());
         baseLexer.checknext(']');
     }
 
@@ -302,9 +300,9 @@ public class LexState {
         }
         cc.nh++;
         baseLexer.checknext('=');
-        rkkey = fs.exp2RK(key);
+        rkkey = fs.exp2RK(key, baseLexer.getLastLine());
         this.expr(val);
-        fs.codeABC(FuncState.OP_SETTABLE, cc.t.info, rkkey, fs.exp2RK(val));
+        fs.codeABC(FuncState.OP_SETTABLE, cc.t.info, rkkey, fs.exp2RK(val, baseLexer.getLastLine()), baseLexer.getLastLine());
         fs.freereg = reg; /* free registers */
     }
 
@@ -319,14 +317,14 @@ public class LexState {
         /* constructor -> ?? */
         FuncState fs = this.fs;
         int line = this.baseLexer.getLine();
-        int pc = fs.codeABC(FuncState.OP_NEWTABLE, 0, 0, 0);
+        int pc = fs.codeABC(FuncState.OP_NEWTABLE, 0, 0, 0, baseLexer.getLastLine());
         ConsControl cc = new ConsControl();
         cc.na = cc.nh = cc.tostore = 0;
         cc.t = t;
         t.init(VRELOCABLE, pc);
         cc.v.init(VVOID, 0); /* no value (yet) */
 
-        fs.exp2nextreg(t); /* fix it at stack top (for gc) */
+        fs.exp2nextreg(t, baseLexer.getLastLine()); /* fix it at stack top (for gc) */
 
         baseLexer.checknext('{');
         do {
@@ -334,7 +332,7 @@ public class LexState {
             if (this.baseLexer.test('}')) {
                 break;
             }
-            fs.closelistfield(cc);
+            fs.closelistfield(cc, baseLexer.getLastLine());
             switch (this.baseLexer.switchToken()) {
                 case Token.TK_NAME: { /* may be listfields or recfields */
                     if (this.baseLexer.isLookahead('=')) {
@@ -355,7 +353,7 @@ public class LexState {
             }
         } while (baseLexer.testnext(',') || baseLexer.testnext(';'));
         baseLexer.check_match('}', '{', line);
-        fs.lastlistfield(cc);
+        fs.lastlistfield(cc, baseLexer.getLastLine());
         InstructionPtr i = new InstructionPtr(fs.f.code, pc);
         FuncState.SETARG_B(i, luaO_int2fb(cc.na)); /* set initial array size */
         FuncState.SETARG_C(i, luaO_int2fb(cc.nh));  /* set initial table size */
@@ -412,7 +410,7 @@ public class LexState {
         int n = 1; /* at least one expression */
         this.expr(v);
         while (baseLexer.testnext(',')) {
-            fs.exp2nextreg(v);
+            fs.exp2nextreg(v, baseLexer.getLastLine());
             this.expr(v);
             n++;
         }
@@ -460,11 +458,11 @@ public class LexState {
             nparams = FuncState.LUA_MULTRET; /* open call */
         } else {
             if (args.k != VVOID) {
-                fs.exp2nextreg(args); /* close last argument */
+                fs.exp2nextreg(args, baseLexer.getLastLine()); /* close last argument */
             }
             nparams = fs.freereg - (base + 1);
         }
-        f.init(VCALL, fs.codeABC(FuncState.OP_CALL, base, nparams + 1, 2));
+        f.init(VCALL, fs.codeABC(FuncState.OP_CALL, base, nparams + 1, 2, this.baseLexer.getLastLine()));
         fs.fixline(line);
         fs.freereg = base + 1;  /* call remove function and arguments and leaves
          * (unless changed) one result */
@@ -484,7 +482,7 @@ public class LexState {
                 baseLexer.next();
                 this.expr(v);
                 baseLexer.check_match(')', '(', line);
-                fs.dischargevars(v);
+                fs.dischargevars(v, baseLexer.getLastLine());
                 break;
             }
             case Token.TK_NAME: {
@@ -513,23 +511,23 @@ public class LexState {
                 }
                 case '[': { /* `[' exp1 `]' */
                     expdesc key = new expdesc();
-                    fs.exp2anyreg(v);
+                    fs.exp2anyreg(v, baseLexer.getLastLine());
                     this.yindex(key);
-                    fs.indexed(v, key);
+                    fs.indexed(v, key, baseLexer.getLastLine());
                     break;
                 }
                 case ':': { /* `:' NAME funcargs */
                     expdesc key = new expdesc();
                     baseLexer.next();
                     checkname(key);
-                    fs.self(v, key);
+                    fs.self(v, key, baseLexer.getLastLine());
                     this.funcargs(v);
                     break;
                 }
                 case '(':
                 case Token.TK_STRING:
                 case '{': { /* funcargs */
-                    fs.exp2nextreg(v);
+                    fs.exp2nextreg(v, baseLexer.getLastLine());
                     this.funcargs(v);
                     break;
                 }
@@ -571,7 +569,7 @@ public class LexState {
                 baseLexer.check_condition(fs.isVararg != 0, "cannot use '...' outside a vararg function");
                 fs.isVararg &= ~FuncState.VARARG_NEEDSARG; /* don't need 'arg' */
 
-                v.init(VVARARG, fs.codeABC(FuncState.OP_VARARG, 0, 1, 0));
+                v.init(VVARARG, fs.codeABC(FuncState.OP_VARARG, 0, 1, 0, baseLexer.getLastLine()));
                 break;
             }
             case '{': { /* constructor */
@@ -653,7 +651,7 @@ public class LexState {
         if (uop != OPR_NOUNOPR) {
             baseLexer.next();
             this.subexpr(v, UNARY_PRIORITY);
-            fs.prefix(uop, v);
+            fs.prefix(uop, v, baseLexer.getLastLine());
         } else {
             this.simpleexp(v);
         }
@@ -663,10 +661,10 @@ public class LexState {
             expdesc v2 = new expdesc();
             int nextop;
             baseLexer.next();
-            fs.infix(op, v);
+            fs.infix(op, v, baseLexer.getLastLine());
             /* read sub-expression with higher priority */
             nextop = this.subexpr(v2, priorityRight[op]);
-            fs.posfix(op, v, v2);
+            fs.posfix(op, v, v2, baseLexer.getLastLine());
             op = nextop;
         }
         this.leavelevel();
@@ -697,7 +695,7 @@ public class LexState {
         fs.enterblock(bl, false);
         this.chunk();
         FuncState._assert(bl.breaklist == NO_JUMP);
-        fs.leaveblock();
+        fs.leaveblock(fs, baseLexer.getLastLine());
     }
 
     /*
@@ -724,7 +722,7 @@ public class LexState {
             }
         }
         if (conflict) {
-            fs.codeABC(FuncState.OP_MOVE, fs.freereg, v.info, 0); /* make copy */
+            fs.codeABC(FuncState.OP_MOVE, fs.freereg, v.info, 0, baseLexer.getLastLine()); /* make copy */
             fs.reserveregs(1);
         }
     }
@@ -746,20 +744,20 @@ public class LexState {
             baseLexer.checknext('=');
             nexps = this.explist1(e);
             if (nexps != nvars) {
-                this.adjust_assign(nvars, nexps, e);
+                this.adjust_assign(nvars, nexps, e, baseLexer.getLastLine());
                 if (nexps > nvars) {
                     this.fs.freereg -= nexps - nvars;  /* remove extra values */
                 }
             } else {
                 fs.setoneret(e);  /* close last expression */
 
-                fs.storevar(lh.v, e);
+                fs.storevar(lh.v, e, baseLexer.getLastLine());
                 return;  /* avoid default */
             }
         }
         e.init(VNONRELOC, this.fs.freereg - 1);  /* default assignment */
 
-        fs.storevar(lh.v, e);
+        fs.storevar(lh.v, e, baseLexer.getLastLine());
     }
 
     private int cond() {
@@ -771,11 +769,11 @@ public class LexState {
         if (v.k == VNIL) {
             v.k = VFALSE;
         }
-        fs.goiftrue(v);
+        fs.goiftrue(v, baseLexer.getLastLine());
         return v.f;
     }
 
-    private void breakstat() {
+    private void breakstat(int lastline) {
         FuncState fs = this.fs;
         BlockCnt bl = fs.bl;
         boolean upval = false;
@@ -787,12 +785,12 @@ public class LexState {
             baseLexer.syntaxerror("no loop to break");
         }
         if (upval) {
-            fs.codeABC(FuncState.OP_CLOSE, bl.nactvar, 0, 0);
+            fs.codeABC(FuncState.OP_CLOSE, bl.nactvar, 0, 0, baseLexer.getLastLine());
         }
-        bl.breaklist = fs.concat(bl.breaklist, fs.jump());
+        bl.breaklist = fs.concat(bl.breaklist, fs.jump(lastline));
     }
 
-    private void whilestat(int line) {
+    private void whilestat(int line, int lastline) {
         /* whilestat -> WHILE cond DO block END */
         FuncState fs = this.fs;
         int whileinit;
@@ -805,13 +803,13 @@ public class LexState {
         fs.enterblock(bl, true);
         baseLexer.checknext(Token.TK_DO);
         this.block();
-        fs.patchlist(fs.jump(), whileinit);
+        fs.patchlist(fs.jump(lastline), whileinit);
         baseLexer.check_match(Token.TK_END, Token.TK_WHILE, line);
-        fs.leaveblock();
+        fs.leaveblock(fs, baseLexer.getLastLine());
         fs.patchtohere(condexit);  /* false conditions finish the loop */
     }
 
-    private void repeatstat(int line) {
+    private void repeatstat(int line, int lastline) {
         /* repeatstat -> REPEAT block UNTIL cond */
         int condexit;
         FuncState fs = this.fs;
@@ -829,25 +827,25 @@ public class LexState {
         condexit = this.cond(); /* read condition (inside scope block) */
 
         if (!bl2.upval) { /* no upvalues? */
-            fs.leaveblock(); /* finish scope */
+            fs.leaveblock(fs, baseLexer.getLastLine()); /* finish scope */
 
             fs.patchlist(condexit, repeat_init); /* close the loop */
         } else { /* complete semantics when there are upvalues */
-            this.breakstat(); /* if condition then break */
+            this.breakstat(lastline); /* if condition then break */
 
             fs.patchtohere(condexit); /* else... */
 
-            fs.leaveblock(); /* finish scope... */
+            fs.leaveblock(fs, baseLexer.getLastLine()); /* finish scope... */
 
-            fs.patchlist(fs.jump(), repeat_init); /* and repeat */
+            fs.patchlist(fs.jump(baseLexer.getLastLine()), repeat_init); /* and repeat */
         }
-        fs.leaveblock(); /* finish loop */
+        fs.leaveblock(fs, baseLexer.getLastLine()); /* finish loop */
     }
 
     private void exp1() {
         expdesc e = new expdesc();
         this.expr(e);
-        fs.exp2nextreg(e);
+        fs.exp2nextreg(e, baseLexer.getLastLine());
     }
 
     private void forbody(int base, int line, int nvars, boolean isnum) {
@@ -858,20 +856,20 @@ public class LexState {
         this.adjustlocalvars(3); /* control variables */
 
         baseLexer.checknext(Token.TK_DO);
-        prep = isnum ? fs.codeAsBx(FuncState.OP_FORPREP, base, NO_JUMP) : fs.jump();
+        prep = isnum ? fs.codeAsBx(FuncState.OP_FORPREP, base, NO_JUMP, baseLexer.getLastLine()) : fs.jump(baseLexer.getLastLine());
         fs.enterblock(bl, false); /* scope for declared variables */
 
         this.adjustlocalvars(nvars);
         fs.reserveregs(nvars);
         this.block();
-        fs.leaveblock(); /* end of scope for declared variables */
+        fs.leaveblock(fs, baseLexer.getLastLine()); /* end of scope for declared variables */
 
         fs.patchtohere(prep);
-        endfor = (isnum) ? fs.codeAsBx(FuncState.OP_FORLOOP, base, NO_JUMP) :
-                fs.codeABC(FuncState.OP_TFORLOOP, base, 0, nvars);
+        endfor = (isnum) ? fs.codeAsBx(FuncState.OP_FORLOOP, base, NO_JUMP, baseLexer.getLastLine()) :
+                fs.codeABC(FuncState.OP_TFORLOOP, base, 0, nvars, baseLexer.getLastLine());
         fs.fixline(line); /* pretend that `Lua.OP_FOR' starts the loop */
 
-        fs.patchlist((isnum ? endfor : fs.jump()), prep + 1);
+        fs.patchlist((isnum ? endfor : fs.jump(baseLexer.getLastLine())), prep + 1);
     }
 
     private void fornum(String varname, int line) {
@@ -891,7 +889,7 @@ public class LexState {
         if (baseLexer.testnext(',')) {
             this.exp1(); /* optional step */
         } else { /* default step = 1 */
-            fs.codeABx(FuncState.OP_LOADK, fs.freereg, fs.numberK(1));
+            fs.codeABx(FuncState.OP_LOADK, fs.freereg, fs.numberK(1), baseLexer.getLastLine());
             fs.reserveregs(1);
         }
         this.forbody(base, line, 1, true);
@@ -915,7 +913,7 @@ public class LexState {
         }
         baseLexer.checknext(Token.TK_IN);
         line = this.baseLexer.getLine();
-        this.adjust_assign(3, this.explist1(e), e);
+        this.adjust_assign(3, this.explist1(e), e, baseLexer.getLastLine());
         fs.checkstack(3); /* extra space to call generator */
 
         this.forbody(base, line, nvars - 3, false);
@@ -944,7 +942,7 @@ public class LexState {
                 baseLexer.syntaxerror("'=' or 'in' expected");
         }
         baseLexer.check_match(Token.TK_END, Token.TK_FOR, line);
-        fs.leaveblock(); /* loop scope (`break' jumps to this point) */
+        fs.leaveblock(fs, baseLexer.getLastLine()); /* loop scope (`break' jumps to this point) */
     }
 
     private int test_then_block() {
@@ -967,12 +965,12 @@ public class LexState {
         flist = test_then_block(); /* IF cond THEN block */
 
         while (this.baseLexer.test(Token.TK_ELSEIF)) {
-            escapelist = fs.concat(escapelist, fs.jump());
+            escapelist = fs.concat(escapelist, fs.jump(baseLexer.getLastLine()));
             fs.patchtohere(flist);
             flist = test_then_block(); /* ELSEIF cond THEN block */
         }
         if (this.baseLexer.test(Token.TK_ELSE)) {
-            escapelist = fs.concat(escapelist, fs.jump());
+            escapelist = fs.concat(escapelist, fs.jump(baseLexer.getLastLine()));
             fs.patchtohere(flist);
             baseLexer.next(); /* skip ELSE (after patch, for correct line info) */
 
@@ -994,7 +992,7 @@ public class LexState {
         fs.reserveregs(1);
         this.adjustlocalvars(1);
         this.body(b, false, this.baseLexer.getLine(), name);
-        fs.storevar(v, b);
+        fs.storevar(v, b, baseLexer.getLastLine());
         /* debug information will only see the variable after this point! */
     }
 
@@ -1012,7 +1010,7 @@ public class LexState {
             e.k = VVOID;
             nexps = 0;
         }
-        this.adjust_assign(nvars, nexps, e);
+        this.adjust_assign(nvars, nexps, e, baseLexer.getLastLine());
         this.adjustlocalvars(nvars);
     }
 
@@ -1043,7 +1041,7 @@ public class LexState {
 
         needself = this.funcname(v);
         this.body(b, needself, line, v.lastname);
-        fs.storevar(v, b);
+        fs.storevar(v, b, baseLexer.getLastLine());
         fs.fixline(line); /* definition `happens' in the first line */
     }
 
@@ -1083,9 +1081,9 @@ public class LexState {
                 nret = FuncState.LUA_MULTRET; /* return all values */
             } else {
                 if (nret == 1) /* only one single value? */ {
-                    first = fs.exp2anyreg(e);
+                    first = fs.exp2anyreg(e, baseLexer.getLastLine());
                 } else {
-                    fs.exp2nextreg(e); /* values must go to the `stack' */
+                    fs.exp2nextreg(e, baseLexer.getLastLine()); /* values must go to the `stack' */
 
                     first = fs.nactvar; /* return all `active' values */
 
@@ -1093,7 +1091,7 @@ public class LexState {
                 }
             }
         }
-        fs.ret(first, nret);
+        fs.ret(first, nret, baseLexer.getLastLine());
     }
 
     private boolean statement() {
@@ -1104,7 +1102,7 @@ public class LexState {
                 return false;
             }
             case Token.TK_WHILE: { /* stat -> whilestat */
-                this.whilestat(line);
+                this.whilestat(line, baseLexer.getLastLine());
                 return false;
             }
             case Token.TK_DO: { /* stat -> DO block END */
@@ -1119,7 +1117,7 @@ public class LexState {
                 return false;
             }
             case Token.TK_REPEAT: { /* stat -> repeatstat */
-                this.repeatstat(line);
+                this.repeatstat(line, baseLexer.getLastLine());
                 return false;
             }
             case Token.TK_FUNCTION: {
@@ -1144,7 +1142,7 @@ public class LexState {
             case Token.TK_BREAK: { /* stat -> breakstat */
                 baseLexer.next(); /* skip BREAK */
 
-                this.breakstat();
+                this.breakstat(baseLexer.getLastLine());
                 return true; /* must be last statement */
             }
             default: {
