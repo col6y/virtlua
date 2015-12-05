@@ -391,7 +391,7 @@ public class LexState {
                         break;
                     }
                     default:
-                        baseLexer.syntaxerror("<name> or " + BaseLexer.LUA_QL("...") + " expected");
+                        baseLexer.syntaxerror("<name> or '...' expected");
                 }
             } while ((fs.isVararg == 0) && baseLexer.testnext(','));
         }
@@ -579,8 +579,7 @@ public class LexState {
             }
             case BaseLexer.TK_DOTS: { /* vararg */
                 FuncState fs = this.fs;
-                baseLexer.check_condition(fs.isVararg != 0, "cannot use " + BaseLexer.LUA_QL("...")
-                        + " outside a vararg function");
+                baseLexer.check_condition(fs.isVararg != 0, "cannot use '...' outside a vararg function");
                 fs.isVararg &= ~FuncState.VARARG_NEEDSARG; /* don't need 'arg' */
 
                 v.init(VVARARG, fs.codeABC(FuncState.OP_VARARG, 0, 1, 0));
@@ -959,7 +958,7 @@ public class LexState {
                 this.forlist(varname);
                 break;
             default:
-                baseLexer.syntaxerror(BaseLexer.LUA_QL("=") + " or " + BaseLexer.LUA_QL("in") + " expected");
+                baseLexer.syntaxerror("'=' or 'in' expected");
         }
         baseLexer.check_match(BaseLexer.TK_END, BaseLexer.TK_FOR, line);
         fs.leaveblock(); /* loop scope (`break' jumps to this point) */

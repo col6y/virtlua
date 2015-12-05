@@ -28,7 +28,6 @@ import se.krka.kahlua.vm.LuaException;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 
 class BaseLexer {
@@ -94,8 +93,7 @@ class BaseLexer {
     int lastline = 1;  /* line of last token `consumed' */
     int linenumber = 1;  /* input line counter */
     private int current;  /* current character (charint) */
-    private byte[] buff = new byte[32];  /* buffer for tokens */
-    private int nbuff = 0; /* length of buffer */
+    private final StringBuilder buff = new StringBuilder();
 
     public BaseLexer(int firstByte, Reader z, String source) {
         this.z = z;
@@ -104,14 +102,6 @@ class BaseLexer {
         this.current = firstByte; /* read first char */
         skipShebang();
         next();
-    }
-
-    private static String LUA_QS(String s) {
-        return "'" + s + "'";
-    }
-
-    static String LUA_QL(Object o) {
-        return LUA_QS(String.valueOf(o));
     }
 
     private static boolean iscntrl(int token) {
@@ -154,10 +144,7 @@ class BaseLexer {
     }
 
     private void save(int c) {
-        if (buff == null || nbuff + 1 > buff.length) {
-            buff = FuncState.realloc(buff, nbuff * 2 + 1);
-        }
-        buff[nbuff++] = (byte) c;
+        buff.append((char) c);
     }
 
     private String token2str(int token) {
@@ -175,7 +162,7 @@ class BaseLexer {
             case TK_NAME:
             case TK_STRING:
             case TK_NUMBER:
-                return new String(buff, 0, nbuff);
+                return buff.toString();
             default:
                 return token2str(token);
         }
@@ -272,7 +259,7 @@ class BaseLexer {
                     save('\n');
                     inclinenumber();
                     if (is_comment) {
-                        nbuff = 0; /* avoid wasting space */
+                        buff.setLength(0); /* avoid wasting space */
                     }
                     break;
                 }
@@ -284,20 +271,15 @@ class BaseLexer {
                 }
             }
         }
-        return is_comment ? null : newstring(buff, 2 + sep, nbuff - 2 * (2 + sep));
+        return is_comment ? null : newstring(2 + sep, buff.length() - 2 * (2 + sep));
     }
 
     String newstring(String s) {
         return newTString(s);
     }
 
-    private String newstring(byte[] chars, int offset, int len) {
-        try {
-            String s = new String(chars, offset, len, "UTF-8");
-            return newTString(s);
-        } catch (UnsupportedEncodingException e) {
-            return null;
-        }
+    private String newstring(int offset, int len) {
+        return newTString(buff.substring(offset, offset + len));
     }
 
     private String newTString(String s) {
@@ -380,7 +362,7 @@ class BaseLexer {
         }
         save_and_next(); /* skip delimiter */
 
-        return newstring(buff, 1, nbuff - 2);
+        return newstring(1, buff.length() - 2);
     }
 
     private boolean check_next(String set) {
@@ -404,7 +386,7 @@ class BaseLexer {
         }
         save('\0');
 
-        String str = new String(buff, 0, nbuff);
+        String str = buff.toString();
         double d;
         str = str.trim(); // TODO: get rid of this
         if (str.startsWith("0x")) {
@@ -416,7 +398,7 @@ class BaseLexer {
     }
 
     private Token llex() {
-        nbuff = 0;
+        buff.setLength(0);
         while (true) {
             switch (current) {
                 case '\n':
@@ -433,10 +415,10 @@ class BaseLexer {
                     nextChar();
                     if (current == '[') {
                         int sep = skip_sep();
-                        nbuff = 0; /* `skip_sep' may dirty the buffer */
+                        buff.setLength(0); /* `skip_sep' may dirty the buffer */
                         if (sep >= 0) {
                             read_long_string(true, sep); /* long comment */
-                            nbuff = 0;
+                            buff.setLength(0);
                             continue;
                         }
                     }
@@ -449,7 +431,7 @@ class BaseLexer {
                 case '[': {
                     int sep = skip_sep();
                     if (sep >= 0) {
-                        return new Token(TK_STRING, read_long_string(false, sep));
+                        return Token.string(read_long_string(false, sep));
                     } else if (sep == -1) {
                         return new Token('[');
                     } else {
@@ -494,7 +476,7 @@ class BaseLexer {
                 }
                 case '"':
                 case '\'': {
-                    return new Token(TK_STRING, read_string(current));
+                    return Token.string(read_string(current));
                 }
                 case '.': {
                     save_and_next();
@@ -507,7 +489,7 @@ class BaseLexer {
                     } else if (!isdigit(current)) {
                         return new Token('.');
                     } else {
-                        return new Token(TK_NUMBER, read_numeral());
+                        return Token.number(read_numeral());
                     }
                 }
                 case EOZ: {
@@ -518,18 +500,18 @@ class BaseLexer {
                         FuncState._assert(!currIsNewline());
                         nextChar();
                     } else if (isdigit(current)) {
-                        return new Token(TK_NUMBER, read_numeral());
+                        return Token.number(read_numeral());
                     } else if (isidentifierchar(current)) {
                         /* identifier or reserved word */
                         String ts;
                         do {
                             save_and_next();
                         } while (isidentifierchar(current));
-                        ts = newstring(buff, 0, nbuff);
+                        ts = buff.toString();
                         if (RESERVED.containsKey(ts)) {
                             return new Token(RESERVED.get(ts));
                         } else {
-                            return new Token(TK_NAME, ts);
+                            return Token.name(newTString(ts));
                         }
                     } else {
                         int c = current;
@@ -557,7 +539,7 @@ class BaseLexer {
     }
 
     private void error_expected(int token) {
-        syntaxerror(LUA_QS(token2str(token)) + " expected");
+        syntaxerror("'" + token2str(token) + "' expected");
     }
 
     boolean testnext(int c) {
@@ -591,9 +573,7 @@ class BaseLexer {
             if (where == linenumber) {
                 error_expected(what);
             } else {
-                syntaxerror(LUA_QS(token2str(what))
-                        + " expected " + "(to close " + LUA_QS(token2str(who))
-                        + " at line " + where + ")");
+                syntaxerror("'" + token2str(what) + "' expected " + "(to close '" + token2str(who) + "' at line " + where + ")");
             }
         }
     }
@@ -613,7 +593,7 @@ class BaseLexer {
         public final double r;
         public final String ts;
 
-        public Token(int token, double r, String ts) {
+        private Token(int token, double r, String ts) {
             this.token = token;
             this.r = r;
             this.ts = ts;
@@ -623,12 +603,16 @@ class BaseLexer {
             this(token, 0, null);
         }
 
-        public Token(int token, String ts) {
-            this(token, 0, ts);
+        public static Token name(String name) {
+            return new Token(TK_NAME, 0, name);
         }
 
-        public Token(int token, double r) {
-            this(token, r, null);
+        public static Token string(String value) {
+            return new Token(TK_STRING, 0, value);
+        }
+
+        public static Token number(double r) {
+            return new Token(TK_NUMBER, r, null);
         }
     }
 }
