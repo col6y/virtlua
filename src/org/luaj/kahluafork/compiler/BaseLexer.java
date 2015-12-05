@@ -86,8 +86,8 @@ class BaseLexer {
         }
     }
 
-    final Token t = new Token();  /* current token */
-    final Token lookahead = new Token();  /* look ahead token */
+    Token t = null;  /* current token */
+    Token lookahead;  /* look ahead token */
     private final Reader z;  /* input stream */
     private final String source;  /* current source name */
     private final HashMap<String, String> strings = new HashMap<>();
@@ -100,7 +100,7 @@ class BaseLexer {
     public BaseLexer(int firstByte, Reader z, String source) {
         this.z = z;
         this.source = source;
-        this.lookahead.token = TK_EOS; /* no look-ahead token */
+        this.lookahead = new Token(TK_EOS); /* no look-ahead token */
         this.current = firstByte; /* read first char */
         skipShebang();
         next();
@@ -138,6 +138,7 @@ class BaseLexer {
         try {
             current = z.read();
         } catch (IOException e) {
+            // TODO: handle exceptions correctly
             e.printStackTrace();
             current = EOZ;
         }
@@ -238,7 +239,7 @@ class BaseLexer {
         return (current == s) ? count : (-count) - 1;
     }
 
-    private void read_long_string(Token token, int sep) {
+    private String read_long_string(boolean is_comment, int sep) {
         save_and_next(); /* skip 2nd `[' */
 
         if (currIsNewline()) /* string starts with a newline? */ {
@@ -247,18 +248,21 @@ class BaseLexer {
         for (boolean endloop = false; !endloop; ) {
             switch (current) {
                 case EOZ:
-                    lexerror((token != null) ? "unfinished long string"
-                            : "unfinished long comment", TK_EOS);
+                    lexerror(is_comment ? "unfinished long comment" : "unfinished long string", TK_EOS);
                     break; /* to avoid warnings */
                 case '[': {
                     if (skip_sep() == sep) {
-                        save_and_next(); /* skip 2nd `[' */
+                        /* skip 2nd `[' */
+                        save(current);
+                        nextChar();
                     }
                     break;
                 }
                 case ']': {
                     if (skip_sep() == sep) {
-                        save_and_next(); /* skip 2nd `]' */
+                         /* skip 2nd `]' */
+                        save(current);
+                        nextChar();
                         endloop = true;
                     }
                     break;
@@ -267,23 +271,20 @@ class BaseLexer {
                 case '\r': {
                     save('\n');
                     inclinenumber();
-                    if (token == null) {
+                    if (is_comment) {
                         nbuff = 0; /* avoid wasting space */
                     }
                     break;
                 }
                 default: {
-                    if (token != null) {
-                        save_and_next();
-                    } else {
-                        nextChar();
+                    if (!is_comment) {
+                        save(current);
                     }
+                    nextChar();
                 }
             }
         }
-        if (token != null) {
-            token.ts = newstring(buff, 2 + sep, nbuff - 2 * (2 + sep));
-        }
+        return is_comment ? null : newstring(buff, 2 + sep, nbuff - 2 * (2 + sep));
     }
 
     String newstring(String s) {
@@ -308,7 +309,7 @@ class BaseLexer {
         return t;
     }
 
-    private void read_string(int del, Token token) {
+    private String read_string(int del) {
         save_and_next();
         while (current != del) {
             switch (current) {
@@ -379,7 +380,7 @@ class BaseLexer {
         }
         save_and_next(); /* skip delimiter */
 
-        token.ts = newstring(buff, 1, nbuff - 2);
+        return newstring(buff, 1, nbuff - 2);
     }
 
     private boolean check_next(String set) {
@@ -390,7 +391,7 @@ class BaseLexer {
         return true;
     }
 
-    private void read_numeral(Token token) {
+    private double read_numeral() {
         FuncState._assert(isdigit(current));
         do {
             save_and_next();
@@ -403,10 +404,7 @@ class BaseLexer {
         }
         save('\0');
 
-        str2d(new String(buff, 0, nbuff), token);
-    }
-
-    private void str2d(String str, BaseLexer.Token token) {
+        String str = new String(buff, 0, nbuff);
         double d;
         str = str.trim(); // TODO: get rid of this
         if (str.startsWith("0x")) {
@@ -414,10 +412,10 @@ class BaseLexer {
         } else {
             d = Double.parseDouble(str);
         }
-        token.r = d;
+        return d;
     }
 
-    private int llex(Token token) {
+    private Token llex() {
         nbuff = 0;
         while (true) {
             switch (current) {
@@ -429,7 +427,7 @@ class BaseLexer {
                 case '-': {
                     nextChar();
                     if (current != '-') {
-                        return '-';
+                        return new Token('-');
                     }
                     /* else is a comment */
                     nextChar();
@@ -437,7 +435,7 @@ class BaseLexer {
                         int sep = skip_sep();
                         nbuff = 0; /* `skip_sep' may dirty the buffer */
                         if (sep >= 0) {
-                            read_long_string(null, sep); /* long comment */
+                            read_long_string(true, sep); /* long comment */
                             nbuff = 0;
                             continue;
                         }
@@ -451,10 +449,9 @@ class BaseLexer {
                 case '[': {
                     int sep = skip_sep();
                     if (sep >= 0) {
-                        read_long_string(token, sep);
-                        return TK_STRING;
+                        return new Token(TK_STRING, read_long_string(false, sep));
                     } else if (sep == -1) {
-                        return '[';
+                        return new Token('[');
                     } else {
                         lexerror("invalid long string delimiter", TK_STRING);
                     }
@@ -462,69 +459,66 @@ class BaseLexer {
                 case '=': {
                     nextChar();
                     if (current != '=') {
-                        return '=';
+                        return new Token('=');
                     } else {
                         nextChar();
-                        return TK_EQ;
+                        return new Token(TK_EQ);
                     }
                 }
                 case '<': {
                     nextChar();
                     if (current != '=') {
-                        return '<';
+                        return new Token('<');
                     } else {
                         nextChar();
-                        return TK_LE;
+                        return new Token(TK_LE);
                     }
                 }
                 case '>': {
                     nextChar();
                     if (current != '=') {
-                        return '>';
+                        return new Token('>');
                     } else {
                         nextChar();
-                        return TK_GE;
+                        return new Token(TK_GE);
                     }
                 }
                 case '~': {
                     nextChar();
                     if (current != '=') {
-                        return '~';
+                        return new Token('~');
                     } else {
                         nextChar();
-                        return TK_NE;
+                        return new Token(TK_NE);
                     }
                 }
                 case '"':
                 case '\'': {
-                    read_string(current, token);
-                    return TK_STRING;
+                    return new Token(TK_STRING, read_string(current));
                 }
                 case '.': {
                     save_and_next();
                     if (check_next(".")) {
                         if (check_next(".")) {
-                            return TK_DOTS; /* ... */
+                            return new Token(TK_DOTS); /* ... */
                         } else {
-                            return TK_CONCAT; /* .. */
+                            return new Token(TK_CONCAT); /* .. */
                         }
                     } else if (!isdigit(current)) {
-                        return '.';
+                        return new Token('.');
                     } else {
-                        read_numeral(token);
-                        return TK_NUMBER;
+                        return new Token(TK_NUMBER, read_numeral());
                     }
                 }
                 case EOZ: {
-                    return TK_EOS;
+                    return new Token(TK_EOS);
                 }
                 default: {
                     if (current <= ' ') {
                         FuncState._assert(!currIsNewline());
                         nextChar();
                     } else if (isdigit(current)) {
-                        read_numeral(token);
-                        return TK_NUMBER;
+                        return new Token(TK_NUMBER, read_numeral());
                     } else if (isidentifierchar(current)) {
                         /* identifier or reserved word */
                         String ts;
@@ -533,15 +527,14 @@ class BaseLexer {
                         } while (isidentifierchar(current));
                         ts = newstring(buff, 0, nbuff);
                         if (RESERVED.containsKey(ts)) {
-                            return RESERVED.get(ts);
+                            return new Token(RESERVED.get(ts));
                         } else {
-                            token.ts = ts;
-                            return TK_NAME;
+                            return new Token(TK_NAME, ts);
                         }
                     } else {
                         int c = current;
                         nextChar();
-                        return c; /* single-char tokens (+ - / ...) */
+                        return new Token(c); /* single-char tokens (+ - / ...) */
                     }
                 }
             }
@@ -551,16 +544,16 @@ class BaseLexer {
     void next() {
         lastline = linenumber;
         if (lookahead.token != TK_EOS) { /* is there a look-ahead token? */
-            t.set(lookahead); /* use this one */
-            lookahead.token = TK_EOS; /* and discharge it */
+            t = lookahead;
+            lookahead = new Token(TK_EOS); /* and discharge it */
         } else {
-            t.token = llex(t); /* read next token */
+            t = llex(); /* read next token */
         }
     }
 
     void lookahead() {
         FuncState._assert(lookahead.token == TK_EOS);
-        lookahead.token = llex(lookahead);
+        lookahead = llex();
     }
 
     private void error_expected(int token) {
@@ -614,16 +607,28 @@ class BaseLexer {
     }
 
     public static class Token {
-        int token;
+        public final int token;
 
         /* semantics information */
-        double r;
-        String ts;
+        public final double r;
+        public final String ts;
 
-        public void set(Token other) {
-            this.token = other.token;
-            this.r = other.r;
-            this.ts = other.ts;
+        public Token(int token, double r, String ts) {
+            this.token = token;
+            this.r = r;
+            this.ts = ts;
+        }
+
+        public Token(int token) {
+            this(token, 0, null);
+        }
+
+        public Token(int token, String ts) {
+            this(token, 0, ts);
+        }
+
+        public Token(int token, double r) {
+            this(token, r, null);
         }
     }
 }
