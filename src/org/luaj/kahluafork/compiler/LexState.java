@@ -95,9 +95,7 @@ public class LexState {
             3, 3, 3, 3, /* order */
             2, 1 /* logical (and/or) */};
     private static final int UNARY_PRIORITY = 8;  /* priority for unary operators */
-
-    final BaseLexer baseLexer;
-
+    private final BaseLexer baseLexer;
     private int nCcalls;
     private FuncState fs;  /* `FuncState' is private to the parser */
 
@@ -152,7 +150,7 @@ public class LexState {
     }
 
     private void checkname(expdesc e) {
-        codestring(e, baseLexer.str_checkname_next());
+        codestring(e, baseLexer.checkname_next());
     }
 
     private void codestring(expdesc e, String s) {
@@ -178,12 +176,8 @@ public class LexState {
         this.fs.nactvar = (this.fs.nactvar + nvars);
     }
 
-    void removevars(int tolevel) {
-        this.fs.nactvar = tolevel;
-    }
-
     private void singlevar(expdesc var) {
-        String varname = baseLexer.str_checkname_next();
+        String varname = baseLexer.checkname_next();
         var.lastname = varname;
         FuncState fs = this.fs;
         if (fs.singlevaraux(varname, var, 1) == VGLOBAL) {
@@ -248,7 +242,7 @@ public class LexState {
         LuaPrototype f = fs.f;
         f.isVararg = fs.isVararg != 0;
 
-        this.removevars(0);
+        this.fs.nactvar = 0;
         fs.ret(0, 0, baseLexer.getLastLine()); /* final return */
 
         f.code = FuncState.realloc(f.code, fs.pc);
@@ -261,9 +255,6 @@ public class LexState {
         this.fs = fs.prev;
     }
 
-    /*============================================================*/
-    /* GRAMMAR RULES */
-    /*============================================================*/
     private void field(expdesc v) {
         /* field -> ['.' | ':'] NAME */
         FuncState fs = this.fs;
@@ -271,7 +262,7 @@ public class LexState {
         fs.exp2anyreg(v, baseLexer.getLastLine());
         baseLexer.next(); /* skip the dot or colon */
 
-        v.lastname = baseLexer.str_checkname();
+        v.lastname = baseLexer.checkname();
         checkname(key);
         fs.indexed(v, key, baseLexer.getLastLine());
     }
@@ -369,7 +360,7 @@ public class LexState {
             do {
                 switch (this.baseLexer.switchToken()) {
                     case Token.TK_NAME: {  /* param . NAME */
-                        this.new_localvar(baseLexer.str_checkname_next(), nparams++);
+                        this.new_localvar(baseLexer.checkname_next(), nparams++);
                         break;
                     }
                     case Token.TK_DOTS: {  /* param . `...' */
@@ -442,7 +433,7 @@ public class LexState {
                 break;
             }
             case Token.TK_STRING: { /* funcargs -> STRING */
-                this.codestring(args, this.baseLexer.str_checkstring());
+                this.codestring(args, this.baseLexer.checkstring());
                 baseLexer.next(); /* must use `seminfo' before `next' */
                 break;
             }
@@ -549,7 +540,7 @@ public class LexState {
                 break;
             }
             case Token.TK_STRING: {
-                this.codestring(v, this.baseLexer.str_checkstring());
+                this.codestring(v, this.baseLexer.checkstring());
                 break;
             }
             case Token.TK_NIL: {
@@ -566,7 +557,9 @@ public class LexState {
             }
             case Token.TK_DOTS: { /* vararg */
                 FuncState fs = this.fs;
-                baseLexer.check_condition(fs.isVararg != 0, "cannot use '...' outside a vararg function");
+                if (fs.isVararg == 0) {
+                    baseLexer.syntaxerror("cannot use '...' outside a vararg function");
+                }
                 fs.isVararg &= ~FuncState.VARARG_NEEDSARG; /* don't need 'arg' */
 
                 v.init(VVARARG, fs.codeABC(FuncState.OP_VARARG, 0, 1, 0, baseLexer.getLastLine()));
@@ -729,8 +722,9 @@ public class LexState {
 
     private void assignment(LHS_assign lh, int nvars) {
         expdesc e = new expdesc();
-        baseLexer.check_condition(VLOCAL <= lh.v.k && lh.v.k <= VINDEXED,
-                "syntax error");
+        if (VLOCAL > lh.v.k || lh.v.k > VINDEXED) {
+            baseLexer.syntaxerror("syntax error");
+        }
         if (baseLexer.testnext(',')) {  /* assignment -> `,' primaryexp assignment */
             LHS_assign nv = new LHS_assign();
             nv.prev = lh;
@@ -909,7 +903,7 @@ public class LexState {
         /* create declared variables */
         this.new_localvar(indexname, nvars++);
         while (baseLexer.testnext(',')) {
-            this.new_localvar(baseLexer.str_checkname_next(), nvars++);
+            this.new_localvar(baseLexer.checkname_next(), nvars++);
         }
         baseLexer.checknext(Token.TK_IN);
         line = this.baseLexer.getLine();
@@ -928,7 +922,7 @@ public class LexState {
 
         baseLexer.next(); /* skip `for' */
 
-        varname = baseLexer.str_checkname_next(); /* first variable name */
+        varname = baseLexer.checkname_next(); /* first variable name */
 
         switch (this.baseLexer.switchToken()) {
             case '=':
@@ -986,7 +980,7 @@ public class LexState {
         expdesc v = new expdesc();
         expdesc b = new expdesc();
         FuncState fs = this.fs;
-        String name = baseLexer.str_checkname_next();
+        String name = baseLexer.checkname_next();
         this.new_localvar(name, 0);
         v.init(VLOCAL, fs.freereg);
         fs.reserveregs(1);
@@ -1002,7 +996,7 @@ public class LexState {
         int nexps;
         expdesc e = new expdesc();
         do {
-            this.new_localvar(baseLexer.str_checkname_next(), nvars++);
+            this.new_localvar(baseLexer.checkname_next(), nvars++);
         } while (baseLexer.testnext(','));
         if (baseLexer.testnext('=')) {
             nexps = this.explist1(e);

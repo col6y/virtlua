@@ -466,12 +466,6 @@ class BaseLexer {
         next();
     }
 
-    void check_condition(boolean c, String msg) {
-        if (!c) {
-            syntaxerror(msg);
-        }
-    }
-
     void check_match(int what, int who, int where) {
         if (!testnext(what)) {
             if (where == linenumber) {
@@ -482,12 +476,12 @@ class BaseLexer {
         }
     }
 
-    String str_checkname() {
+    String checkname() {
         check(Token.TK_NAME);
         return t.getString();
     }
 
-    String str_checkstring() {
+    String checkstring() {
         check(Token.TK_STRING);
         return t.getString();
     }
@@ -497,8 +491,8 @@ class BaseLexer {
         return t.getNumber();
     }
 
-    String str_checkname_next() {
-        String name = str_checkname();
+    String checkname_next() {
+        String name = checkname();
         next();
         return name;
     }
