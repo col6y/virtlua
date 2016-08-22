@@ -467,31 +467,25 @@ class FuncState {
         }
     }
 
-    int singlevaraux(String n, expdesc var, int base) {
+    expdesc singlevaraux(String n, int base) {
         int v = searchvar(n); /* look up at current level */
 
         if (v >= 0) {
-            var.init(LexState.VLOCAL, v);
             if (base == 0) {
                 markupval(v); /* local will be used as an upval */
             }
-            return LexState.VLOCAL;
+            return new expdesc(LexState.VLOCAL, v, n);
         } else { /* not found at current level; try upper one */
-
             if (prev == null) { /* no more levels? */
                 /* default is global variable */
-
-                var.init(LexState.VGLOBAL, NO_REG);
-                return LexState.VGLOBAL;
+                return new expdesc(LexState.VGLOBAL, NO_REG, n); // NOTE: most of this will be thrown away by LexState
             }
-            if (prev.singlevaraux(n, var, 0) == LexState.VGLOBAL) {
-                return LexState.VGLOBAL;
+            expdesc var = prev.singlevaraux(n, 0);
+            if (var.k == LexState.VGLOBAL) {
+                return var;
             }
-            var.info = indexupvalue(n, var); /* else was LOCAL or UPVAL */
-
-            var.k = LexState.VUPVAL; /* upvalue in this level */
-
-            return LexState.VUPVAL;
+            var = new expdesc(LexState.VUPVAL, indexupvalue(n, var), n); /* else was LOCAL or UPVAL */
+            return var;
         }
     }
 
@@ -523,15 +517,13 @@ class FuncState {
     void closelistfield(ConsControl cc, int lastline) {
         if (cc.v.k == LexState.VVOID) {
             return; /* there is no list item */
-
         }
         this.exp2nextreg(cc.v, lastline);
-        cc.v.k = LexState.VVOID;
+        cc.v = new expdesc(LexState.VVOID, 0);
         if (cc.tostore == LFIELDS_PER_FLUSH) {
             this.setlist(cc.t.info, cc.na, cc.tostore, lastline); /* flush */
 
             cc.tostore = 0; /* no more items pending */
-
         }
     }
 
@@ -819,49 +811,33 @@ class FuncState {
         }
     }
 
-    void setoneret(expdesc e) {
+    expdesc setoneret(expdesc e) {
         if (e.k == LexState.VCALL) { /* expression is an open function call? */
-
-            e.k = LexState.VNONRELOC;
-            e.info = GETARG_A(this.getcode(e));
+            return new expdesc(LexState.VNONRELOC, GETARG_A(this.getcode(e)));
         } else if (e.k == LexState.VVARARG) {
             SETARG_B(this.getcodePtr(e), 2);
-            e.k = LexState.VRELOCABLE; /* can relocate its simple result */
-
+            return new expdesc(LexState.VRELOCABLE, e.info); /* can relocate its simple result */
         }
     }
 
-    void dischargevars(expdesc e, int lastline) {
+    expdesc dischargevars(expdesc e, int lastline) {
+        // TODO: make sure that all uses use the return value
         switch (e.k) {
-            case LexState.VLOCAL: {
-                e.k = LexState.VNONRELOC;
-                break;
-            }
-            case LexState.VUPVAL: {
-                e.info = this.codeABC(OP_GETUPVAL, 0, e.info, 0, lastline);
-                e.k = LexState.VRELOCABLE;
-                break;
-            }
-            case LexState.VGLOBAL: {
-                e.info = this.codeABx(OP_GETGLOBAL, 0, e.info, lastline);
-                e.k = LexState.VRELOCABLE;
-                break;
-            }
-            case LexState.VINDEXED: {
+            case LexState.VLOCAL:
+                return new expdesc(LexState.VNONRELOC, e.info);
+            case LexState.VUPVAL:
+                return new expdesc(LexState.VRELOCABLE, this.codeABC(OP_GETUPVAL, 0, e.info, 0, lastline));
+            case LexState.VGLOBAL:
+                return new expdesc(LexState.VRELOCABLE, this.codeABx(OP_GETGLOBAL, 0, e.info, lastline));
+            case LexState.VINDEXED:
                 this.freereg(e.aux);
                 this.freereg(e.info);
-                e.info = this.codeABC(OP_GETTABLE, 0, e.info, e.aux, lastline);
-                e.k = LexState.VRELOCABLE;
-                break;
-            }
+                return new expdesc(LexState.VRELOCABLE, this.codeABC(OP_GETTABLE, 0, e.info, e.aux, lastline));
             case LexState.VVARARG:
-            case LexState.VCALL: {
-                this.setoneret(e);
-                break;
-            }
+            case LexState.VCALL:
+                return this.setoneret(e);
             default:
-                break; /* there is one value available (somewhere) */
-
+                return e; /* there is one value available (somewhere) */
         }
     }
 
@@ -871,67 +847,61 @@ class FuncState {
         return this.codeABC(OP_LOADBOOL, A, b, jump, lastline);
     }
 
-    private void discharge2reg(expdesc e, int reg, int lastline) {
-        this.dischargevars(e, lastline);
+    private expdesc discharge2reg(expdesc e, int reg, int lastline) {
+        // TODO: make sure that all uses use the return value
+        e = this.dischargevars(e, lastline);
         switch (e.k) {
-            case LexState.VNIL: {
+            case LexState.VNIL:
                 this.nil(reg, 1, lastline);
                 break;
-            }
             case LexState.VFALSE:
-            case LexState.VTRUE: {
+            case LexState.VTRUE:
                 this.codeABC(OP_LOADBOOL, reg, (e.k == LexState.VTRUE ? 1 : 0), 0, lastline);
                 break;
-            }
-            case LexState.VK: {
+            case LexState.VK:
                 this.codeABx(OP_LOADK, reg, e.info, lastline);
                 break;
-            }
-            case LexState.VKNUM: {
+            case LexState.VKNUM:
                 this.codeABx(OP_LOADK, reg, this.numberK(e.nval()), lastline);
                 break;
-            }
-            case LexState.VRELOCABLE: {
+            case LexState.VRELOCABLE:
                 InstructionPtr pc = this.getcodePtr(e);
                 SETARG_A(pc, reg);
                 break;
-            }
-            case LexState.VNONRELOC: {
+            case LexState.VNONRELOC:
                 if (reg != e.info) {
                     this.codeABC(OP_MOVE, reg, e.info, 0, lastline);
                 }
                 break;
-            }
             default: {
                 _assert(e.k == LexState.VVOID || e.k == LexState.VJMP);
-                return; /* nothing to do... */
-
+                return e; /* nothing to do... */
             }
         }
-        e.info = reg;
-        e.k = LexState.VNONRELOC;
+        return new expdesc(LexState.VNONRELOC, reg);
     }
 
-    private void discharge2anyreg(expdesc e, int lastline) {
+    private expdesc discharge2anyreg(expdesc e, int lastline) {
+        // TODO: use all returns
         if (e.k != LexState.VNONRELOC) {
             this.reserveregs(1);
-            this.discharge2reg(e, this.freereg - 1, lastline);
+            return this.discharge2reg(e, this.freereg - 1, lastline);
+        } else {
+            return e;
         }
     }
 
-    private void exp2reg(expdesc e, int reg, int lastline) {
-        this.discharge2reg(e, reg, lastline);
-        if (e.k == LexState.VJMP) {
-            e.t = this.concat(e.t, e.info); /* put this jump in `t' list */
+    private expdesc exp2reg(expdesc e, int reg, int lastline) {
+        // TODO: make sure that all uses use the return value
+        e = this.discharge2reg(e, reg, lastline);
 
+        if (e.k == LexState.VJMP) {
+            e = e.updateT(this.concat(e.t, e.info)); /* put this jump in `t' list */
         }
         if (e.hasjumps()) {
             int _final; /* position after whole expression */
-
             int p_f = LexState.NO_JUMP; /* position of an eventual LOAD false */
-
             int p_t = LexState.NO_JUMP; /* position of an eventual LOAD true */
-
             if (this.need_value(e.t) || this.need_value(e.f)) {
                 int fj = (e.k == LexState.VJMP) ? LexState.NO_JUMP : this.jump(lastline);
                 p_f = this.code_label(reg, 0, 1, lastline);
@@ -942,66 +912,65 @@ class FuncState {
             this.patchlistaux(e.f, _final, reg, p_f);
             this.patchlistaux(e.t, _final, reg, p_t);
         }
-        e.f = e.t = LexState.NO_JUMP;
-        e.info = reg;
-        e.k = LexState.VNONRELOC;
+        return new expdesc(LexState.VNONRELOC, reg); // TODO: do I need e.aux?
     }
 
-    void exp2nextreg(expdesc e, int lastline) {
-        this.dischargevars(e, lastline);
+    expdesc exp2nextreg(expdesc e, int lastline) {
+        // TODO: make sure that all uses use the return value
+        e = this.dischargevars(e, lastline);
         this.freeexp(e);
         this.reserveregs(1);
-        this.exp2reg(e, this.freereg - 1, lastline);
+        return this.exp2reg(e, this.freereg - 1, lastline);
     }
 
-    int exp2anyreg(expdesc e, int lastline) {
-        this.dischargevars(e, lastline);
+    expdesc exp2anyreg(expdesc e, int lastline) {
+        // TODO: make sure that all uses use the return value
+        e = this.dischargevars(e, lastline);
         if (e.k == LexState.VNONRELOC) {
             if (!e.hasjumps()) {
-                return e.info; /* exp is already in a register */
-
+                return e; /* exp is already in a register */
             }
             if (e.info >= this.nactvar) { /* reg. is not a local? */
-
-                this.exp2reg(e, e.info, lastline); /* put value on it */
-
-                return e.info;
+                return this.exp2reg(e, e.info, lastline); /* put value on it */
             }
         }
-        this.exp2nextreg(e, lastline); /* default */
-
-        return e.info;
+        return this.exp2nextreg(e, lastline); /* default */
+        // TODO: return value WAS e.info
     }
 
-    void exp2val(expdesc e, int lastline) {
+    expdesc exp2val(expdesc e, int lastline) {
+        // TODO: make sure all uses use the return value
         if (e.hasjumps()) {
-            this.exp2anyreg(e, lastline);
+            return this.exp2anyreg(e, lastline);
         } else {
-            this.dischargevars(e, lastline);
+            return this.dischargevars(e, lastline);
         }
     }
 
-    int exp2RK(expdesc e, int lastline) {
-        this.exp2val(e, lastline);
+    expdesc exp2RK(expdesc e, int lastline) {
+        // TODO: make sure all uses use the return value
+        // NOTE: the old return value is now stored in aux_depth
+        e = this.exp2val(e, lastline);
         switch (e.k) {
             case LexState.VKNUM:
             case LexState.VTRUE:
             case LexState.VFALSE:
             case LexState.VNIL: {
                 if (this.nk <= MAXINDEXRK) { /* constant fit in RK operand? */
-
-                    e.info = (e.k == LexState.VNIL) ? this.nilK()
-                            : (e.k == LexState.VKNUM) ? this.numberK(e.nval())
-                            : this.boolK((e.k == LexState.VTRUE));
-                    e.k = LexState.VK;
-                    return RKASK(e.info);
+                    int info = (e.k == LexState.VNIL) ? this.nilK()
+                             : (e.k == LexState.VKNUM) ? this.numberK(e.nval())
+                             : this.boolK((e.k == LexState.VTRUE));
+                    e = new expdesc(LexState.VK, info);
+                    e.aux_depth = RKASK(e.info);
+                    return e;
                 } else {
                     break;
                 }
             }
             case LexState.VK: {
                 if (e.info <= MAXINDEXRK) /* constant fit in argC? */ {
-                    return RKASK(e.info);
+                    e.aux_depth = RKASK(e.info);
+                    return e;
                 } else {
                     break;
                 }
@@ -1010,50 +979,53 @@ class FuncState {
                 break;
         }
         /* not a constant in the right range: put it in a register */
-        return this.exp2anyreg(e, lastline);
+        e = this.exp2anyreg(e, lastline);
+        e.aux_depth = e.info;
+        return e;
     }
 
-    void storevar(expdesc var, expdesc ex, int lastline) {
+    expdesc storevar(expdesc var, expdesc ex, int lastline) {
+        // TODO: make sure all usages use return value: updated version of ex
         switch (var.k) {
             case LexState.VLOCAL: {
                 this.freeexp(ex);
                 this.exp2reg(ex, var.info, lastline);
-                return;
+                return ex;
             }
             case LexState.VUPVAL: {
-                int e = this.exp2anyreg(ex, lastline);
-                this.codeABC(OP_SETUPVAL, e, var.info, 0, lastline);
+                ex = this.exp2anyreg(ex, lastline);
+                this.codeABC(OP_SETUPVAL, ex.info, var.info, 0, lastline);
                 break;
             }
             case LexState.VGLOBAL: {
-                int e = this.exp2anyreg(ex, lastline);
-                this.codeABx(OP_SETGLOBAL, e, var.info, lastline);
+                ex = this.exp2anyreg(ex, lastline);
+                this.codeABx(OP_SETGLOBAL, ex.info, var.info, lastline);
                 break;
             }
             case LexState.VINDEXED: {
-                int e = this.exp2RK(ex, lastline);
-                this.codeABC(OP_SETTABLE, var.info, var.aux, e, lastline);
+                ex = this.exp2RK(ex, lastline);
+                this.codeABC(OP_SETTABLE, var.info, var.aux, ex.aux_depth, lastline);
                 break;
             }
             default: {
                 _assert(false); /* invalid var kind to store */
-
                 break;
             }
         }
         this.freeexp(ex);
+        return ex;
     }
 
-    void self(expdesc e, expdesc key, int lastline) {
+    expdesc self(expdesc e, expdesc key, int lastline) {
         int func;
         this.exp2anyreg(e, lastline);
         this.freeexp(e);
         func = this.freereg;
         this.reserveregs(2);
-        this.codeABC(OP_SELF, func, e.info, this.exp2RK(key, lastline), lastline);
+        key = this.exp2RK(key, lastline);
+        this.codeABC(OP_SELF, func, e.info, key.aux_depth, lastline);
         this.freeexp(key);
-        e.info = func;
-        e.k = LexState.VNONRELOC;
+        return new expdesc(LexState.VNONRELOC, func);
     }
 
     private void invertjump(expdesc e) {
@@ -1081,10 +1053,11 @@ class FuncState {
         return this.condjump(OP_TESTSET, NO_REG, e.info, cond, lastline);
     }
 
-    void goiftrue(expdesc e, int lastline) {
+    expdesc goiftrue(expdesc e, int lastline) {
+        // TODO: use return value always: updated e
         int pc; /* pc of last jump */
 
-        this.dischargevars(e, lastline);
+        e = this.dischargevars(e, lastline);
         switch (e.k) {
             case LexState.VK:
             case LexState.VKNUM:
@@ -1108,26 +1081,25 @@ class FuncState {
                 break;
             }
         }
-        e.f = this.concat(e.f, pc); /* insert last jump in `f' list */
+        int f = this.concat(e.f, pc); /* insert last jump in `f' list */
 
         this.patchtohere(e.t);
-        e.t = LexState.NO_JUMP;
+        return e.updateT(LexState.NO_JUMP).updateF(f);
     }
 
-    private void goiffalse(expdesc e, int lastline) {
+    private expdesc goiffalse(expdesc e, int lastline) {
+        // TODO: use all returns
         int pc; /* pc of last jump */
 
-        this.dischargevars(e, lastline);
+        e = this.dischargevars(e, lastline);
         switch (e.k) {
             case LexState.VNIL:
             case LexState.VFALSE: {
                 pc = LexState.NO_JUMP; /* always false; do nothing */
-
                 break;
             }
             case LexState.VTRUE: {
                 pc = this.jump(lastline); /* always jump */
-
                 break;
             }
             case LexState.VJMP: {
@@ -1139,57 +1111,48 @@ class FuncState {
                 break;
             }
         }
-        e.t = this.concat(e.t, pc); /* insert last jump in `t' list */
-
+        int t = this.concat(e.t, pc); /* insert last jump in `t' list */
         this.patchtohere(e.f);
-        e.f = LexState.NO_JUMP;
+        return e.updateF(LexState.NO_JUMP).updateT(t);
     }
 
-    private void codenot(expdesc e, int lastline) {
-        this.dischargevars(e, lastline);
+    private expdesc codenot(expdesc e, int lastline) {
+        // TODO: use all returns
+        e = this.dischargevars(e, lastline);
         switch (e.k) {
             case LexState.VNIL:
-            case LexState.VFALSE: {
-                e.k = LexState.VTRUE;
+            case LexState.VFALSE:
+                e = new expdesc(LexState.VTRUE, 0);
                 break;
-            }
             case LexState.VK:
             case LexState.VKNUM:
-            case LexState.VTRUE: {
-                e.k = LexState.VFALSE;
+            case LexState.VTRUE:
+                e = new expdesc(LexState.VFALSE, 0);
                 break;
-            }
-            case LexState.VJMP: {
+            case LexState.VJMP:
                 this.invertjump(e);
                 break;
-            }
             case LexState.VRELOCABLE:
-            case LexState.VNONRELOC: {
-                this.discharge2anyreg(e, lastline);
+            case LexState.VNONRELOC:
+                e = this.discharge2anyreg(e, lastline);
                 this.freeexp(e);
-                e.info = this.codeABC(OP_NOT, 0, e.info, 0, lastline);
-                e.k = LexState.VRELOCABLE;
+                e = new expdesc(LexState.VRELOCABLE, this.codeABC(OP_NOT, 0, e.info, 0, lastline));
                 break;
-            }
-            default: {
+            default:
                 _assert(false); /* cannot happen */
-
                 break;
-            }
         }
         /* interchange true and false lists */
-        {
-            int temp = e.f;
-            e.f = e.t;
-            e.t = temp;
-        }
-        this.removevalues(e.f);
         this.removevalues(e.t);
+        this.removevalues(e.f);
+        return e.updateT(e.f).updateF(e.t);
     }
 
-    void indexed(expdesc t, expdesc k, int lastline) {
-        t.aux = this.exp2RK(k, lastline);
-        t.k = LexState.VINDEXED;
+    expdesc indexed(expdesc t, expdesc k, int lastline, String lastname) {
+        // note: never use k again after calling this function
+        // TODO: make sure return is used: t
+        k = this.exp2RK(k, lastline);
+        return new expdesc(LexState.VINDEXED, t.info, k.aux_depth, lastname);
     }
 
     private boolean constfolding(int op, expdesc e1, expdesc e2) {
@@ -1222,17 +1185,15 @@ class FuncState {
                 break;
             case OP_LEN:
                 return false; /* no constant folding for 'len' */
-
             default:
                 _assert(false);
                 return false;
         }
         if (Double.isNaN(r) || Double.isInfinite(r)) {
             return false; /* do not attempt to produce NaN */
-
         }
-        e1.setNval(r);
-        return true;
+        // WORKING HERE. currently replacing the insides of this function
+        return new expdesc(LexState.VKNUM, r);
     }
 
     private void codearith(int op, expdesc e1, expdesc e2, int lastline) {
@@ -1269,7 +1230,7 @@ class FuncState {
         e1.k = LexState.VJMP;
     }
 
-    void prefix(int /* UnOpr */ op, expdesc e, int lastline) {
+    expdesc prefix(int /* UnOpr */ op, expdesc e, int lastline) {
         expdesc e2 = new expdesc();
         e2.init(LexState.VKNUM, 0);
         switch (op) {
@@ -1327,7 +1288,7 @@ class FuncState {
         }
     }
 
-    void posfix(int op, expdesc e1, expdesc e2, int lastline) {
+    expdesc posfix(int op, expdesc e1, expdesc e2, int lastline) {
         switch (op) {
             case LexState.OPR_AND: {
                 _assert(e1.t == LexState.NO_JUMP); /* list must be closed */

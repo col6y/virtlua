@@ -110,7 +110,7 @@ class BaseLexer {
         return source + end;
     }
 
-    private void lexerror(String msg, Token token) {
+    private LuaException lexerror_r(String msg, Token token) {
         String cid = chunkid(source); // TODO: get source name from source
         String errorMessage;
         if (token != null) {
@@ -118,7 +118,11 @@ class BaseLexer {
         } else {
             errorMessage = cid + ":" + linenumber + ": " + msg;
         }
-        throw new LuaException(errorMessage);
+        return new LuaException(errorMessage);
+    }
+
+    private void lexerror(String msg, Token token) {
+        throw lexerror_r(msg, token);
     }
 
     private void inclinenumber() {
@@ -522,5 +526,9 @@ class BaseLexer {
 
     void syntaxerror(String msg) {
         lexerror(msg, t);
+    }
+
+    LuaException syntaxerror_r(String msg) {
+        return lexerror_r(msg, t);
     }
 }
